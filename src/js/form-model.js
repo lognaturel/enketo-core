@@ -1207,46 +1207,49 @@ FormModel.prototype.convertPullDataFn = function( expr, selector, index ) {
  * @param {string} expr - The expression to evaluate
  * @param {string} [resTypeStr] - "boolean", "string", "number", "node", "nodes" (best to always supply this)
  * @param {string} [selector] - Query selector which will be use to provide the context to the evaluator
+ * @param context
  * @param {number} [index] - 0-based index of selector in document
  * @param {boolean} [tryNative] - Whether an attempt to try the Native Evaluator is safe (ie. whether it is
- *                                certain that there are no date comparisons)
+ * certain that there are no date comparisons)
  * @return {number|string|boolean|Array<element>} The result
  */
-FormModel.prototype.evaluate = function( expr, resTypeStr, selector, index, tryNative ) {
-    let j, context, doc, resTypeNum, resultTypes, result, collection, response, repeats, cacheKey, original, cacheable;
-
+FormModel.prototype.evaluate = function( expr, resTypeStr = 'any', context = this.rootElement, index, tryNative = false ) {
+    let j, doc, resTypeNum, resultTypes, result, collection, response, repeats, cacheKey, original, cacheable;
+    let contextPath;
     // console.debug( 'evaluating expr: ' + expr + ' with context selector: ' + selector + ', 0-based index: ' +
     //    index + ' and result type: ' + resTypeStr );
     original = expr;
-    tryNative = tryNative || false;
-    resTypeStr = resTypeStr || 'any';
     index = index || 0;
     doc = this.xml;
+    // either the first data child of the first instance or the first child (for loaded instances without a model)
+    context = context || this.rootElement;
+
     repeats = null;
 
-    if ( selector ) {
-        collection = this.node( selector ).getElements();
+    if ( typeof context === 'string' ){
+        contextPath = context;
+        collection = this.node( context ).getElements();
         repeats = collection.length;
         context = collection[ index ];
+
     } else {
-        // either the first data child of the first instance or the first child (for loaded instances without a model)
-        context = this.rootElement;
+        contextPath = getXPath( context, 'instance', false );
     }
 
     if ( !context ) {
-        console.error( 'no context element found', selector, index );
+        console.error( 'no context element found', context, index );
     }
 
     // cache key includes the number of repeated context nodes,
     // to force a new cache item if the number of repeated changes to > 0
     // TODO: these cache keys can get quite large. Would it be beneficial to get the md5 of the key?
-    cacheKey = [ expr, selector, index, repeats ].join( '|' );
+    cacheKey = [ expr, contextPath, index, repeats ].join( '|' );
 
     // These functions need to come before makeBugCompliant.
     // An expression transformation with indexed-repeat or pulldata cannot be cached because in
     // "indexed-repeat(node, repeat nodeset, index)" the index parameter could be an expression.
-    expr = this.replaceIndexedRepeatFn( expr, selector, index );
-    expr = this.replacePullDataFn( expr, selector, index );
+    expr = this.replaceIndexedRepeatFn( expr, contextPath, index );
+    expr = this.replacePullDataFn( expr,contextPath, index );
     cacheable = ( original === expr );
 
     // if no cached conversion exists
@@ -1259,7 +1262,7 @@ FormModel.prototype.evaluate = function( expr, resTypeStr, selector, index, tryN
         expr = this.shiftRoot( expr );
         // path corrections for repeated nodes: http://opendatakit.github.io/odk-xform-spec/#a-big-deviation-with-xforms
         if ( repeats && repeats > 1 ) {
-            expr = this.makeBugCompliant( expr, selector, index );
+            expr = this.makeBugCompliant( expr, contextPath, index );
         }
         // decode
         expr = expr.replace( /&lt;/g, '<' );
@@ -1357,7 +1360,7 @@ FormModel.prototype.evaluate = function( expr, resTypeStr, selector, index, tryN
  * Class dealing with nodes and nodesets of the XML instance
  *
  * @class
- * @param {string} [selector] - SimpleXPath or jQuery selector
+ * @param {string} [selector] - SimpleXPath selector
  * @param {number} [index] - The index of the target node with that selector
  * @param {NodesetFilter} [filter] - Filter object for the result nodeset
  * @param {FormModel} model - Instance of FormModel
