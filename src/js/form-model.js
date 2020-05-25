@@ -1221,17 +1221,17 @@ FormModel.prototype.evaluate = function( expr, resTypeStr = 'any', context = thi
     original = expr;
     index = index || 0;
     doc = this.xml;
-    // either the first data child of the first instance or the first child (for loaded instances without a model)
-    context = context || this.rootElement;
-
     repeats = null;
 
-    if ( typeof context === 'string' ){
+    // either the first data child of the first instance or the first child (for loaded instances without a model)
+    if ( !context ) {
+        context = this.rootElement;
+        contextPath = '/';
+    } else if ( typeof context === 'string' ){
         contextPath = context;
         collection = this.node( context ).getElements();
         repeats = collection.length;
         context = collection[ index ];
-
     } else {
         contextPath = getXPath( context, 'instance', false );
     }
