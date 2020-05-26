@@ -7,6 +7,7 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 ----------------------
 ##### Fixed
 - Date fields in Grid Theme do not show values in print view.
+- Itemsets inside a non-relevant group are not updated when group becomes relevant.
 
 [5.15.4] - 2020-05-15
 ----------------------
