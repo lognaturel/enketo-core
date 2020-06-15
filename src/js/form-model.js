@@ -1233,7 +1233,7 @@ FormModel.prototype.evaluate = function( expr, resTypeStr, selector, index, tryN
     if ( selector ) {
         collection = this.node( selector ).getElements();
         repeats = collection.length;
-        context = collection[ index ];
+        context = collection[ index ] || this.rootElement;
     } else {
         // either the first data child of the first instance or the first child (for loaded instances without a model)
         context = this.rootElement;
