@@ -160,6 +160,15 @@ Form.prototype = {
     get id() {
         return this.view.html.id;
     },
+    get constraintClassesInvalid() {
+        return Form.constraintNames.map( n => `.invalid-${n}` );
+    },
+    get constraintAttributes() {
+        return Form.constraintNames.map( n => `data-${n}` );
+    },
+    get constraintMessages() {
+        return Form.constraintNames.map( n => `or-${n}-msg` );
+    },
     /**
      * @type {Array<string>}
      */
@@ -696,8 +705,8 @@ Form.prototype.validationUpdate = function( updated ) {
         }
 
         // Find all inputs that have a dependency on the changed node.
-        $nodes = this.getRelatedNodes( 'data-constraint', '', upd )
-            .add( this.getRelatedNodes( 'data-required', '', upd ) );
+        $nodes = this.getRelatedNodes( 'data-required', '', upd );
+        this.constraintAttributes.forEach( attr => $nodes = $nodes.add( this.getRelatedNodes( attr, '', upd ) ) );
 
         $nodes.each( function() {
             that.validateInput( this );
@@ -809,17 +818,16 @@ Form.prototype.setEventHandlers = function() {
  * @param {string} [type] - One of "constraint", "required" and "relevant".
  */
 Form.prototype.setValid = function( node, type ) {
-    const classes =  type ? [ `invalid-${type}` ] : [ 'invalid-constraint', 'invalid-required', 'invalid-relevant' ];
-    this.input.getWrapNode( node ).classList.remove( ...classes );
+    const wrap = this.input.getWrapNode( node );
+    const classes = type ? [ `invalid-${type}` ] : [ ...wrap.classList ].filter( cl => cl.indexOf( 'invalid-' ) === 0 );
+    wrap.classList.remove( ...classes );
 };
 
 /**
  * @param {Element} node - form control HTML element
  * @param {string} [type] - One of "constraint", "required" and "relevant".
  */
-Form.prototype.setInvalid = function( node, type ) {
-    type = type || 'constraint';
-
+Form.prototype.setInvalid = function( node, type = 'constraint' ) {
     if ( config.validatePage === false && this.isValid( node ) ) {
         this.blockPageNavigation();
     }
@@ -847,14 +855,15 @@ Form.prototype.blockPageNavigation = function() {
  * @return {!boolean} Whether the question/form is not marked as invalid.
  */
 Form.prototype.isValid = function( node ) {
+    const invalidSelectors = [ '.invalid-required', '.invalid-relevant' ].concat( this.constraintClassesInvalid );
     if ( node ) {
         const question = this.input.getWrapNode( node );
         const cls = question.classList;
 
-        return !cls.contains( 'invalid-required' ) && !cls.contains( 'invalid-constraint' ) && !cls.contains( 'invalid-relevant' );
+        return !invalidSelectors.some( selector => cls.contains( selector ) );
     }
 
-    return this.view.html.querySelector( '.invalid-required, .invalid-constraint, .invalid-relevant' ) === null;
+    return !this.view.html.querySelector( invalidSelectors.join( ', ' ) );
 };
 
 /**
@@ -897,8 +906,8 @@ Form.prototype.validate = Form.prototype.validateAll;
  * @return {Promise} wrapping {boolean} whether the container contains any errors
  */
 Form.prototype.validateContent = function( $container ) {
-    let $firstError;
     const that = this;
+    const invalidSelector = [ '.invalid-required', '.invalid-relevant' ].concat( this.constraintClassesInvalid ).join( ', ' );
 
     //can't fire custom events on disabled elements therefore we set them all as valid
     $container.find( 'fieldset:disabled input, fieldset:disabled select, fieldset:disabled textarea, ' +
@@ -919,16 +928,14 @@ Form.prototype.validateContent = function( $container ) {
 
     return Promise.all( validations )
         .then( () => {
-            $firstError = $container
-                .find( '.invalid-required, .invalid-constraint, .invalid-relevant' )
-                .addBack( '.invalid-required, .invalid-constraint, .invalid-relevant' )
-                .eq( 0 );
+            const container = $container[ 0 ];
+            const firstError = container.matches( invalidSelector ) ? container : container.querySelector( invalidSelector );
 
-            if ( $firstError.length > 0 ) {
-                that.goToTarget( $firstError[ 0 ] );
+            if ( firstError ) {
+                that.goToTarget( firstError );
             }
 
-            return $firstError.length === 0;
+            return !firstError;
         } )
         .catch( () => // fail whole-form validation if any of the question
             // validations threw.
@@ -979,6 +986,7 @@ Form.prototype.validateInput = function( control ) {
         inputType: this.input.getInputType( control ),
         xmlType: this.input.getXmlType( control ),
         enabled: this.input.isEnabled( control ),
+        // TODO: return array of objects with number of constraint and constraint expression?
         constraint: this.input.getConstraint( control ),
         calculation: this.input.getCalculation( control ),
         required: this.input.getRequired( control ),
