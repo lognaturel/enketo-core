@@ -1,7 +1,7 @@
 import $ from 'jquery';
 import Widget from '../../js/widget';
 import fileManager from 'enketo/file-manager';
-import { getFilename, updateDownloadLink } from '../../js/utils';
+import { getFilename, updateDownloadLink, resizeImage, isNumber } from '../../js/utils';
 import events from '../../js/event';
 import { t } from 'enketo/translator';
 import TranslatedError from '../../js/translated-error';
@@ -14,9 +14,13 @@ import { empty } from '../../js/dom-utils';
 /**
  * FilePicker that works both offline and online. It abstracts the file storage/cache away
  * with the injected fileManager.
+ *
+ * @augments Widget
  */
 class Filepicker extends Widget {
-
+    /**
+     * @type {string}
+     */
     static get selector() {
         return '.question:not(.or-appearance-draw):not(.or-appearance-signature):not(.or-appearance-annotate) input[type="file"]';
     }
@@ -60,10 +64,10 @@ class Filepicker extends Widget {
             this._showFeedback( t( 'filepicker.waitingForPermissions' ), 'warning' );
         }
 
-        // Monitor maxSize changes to update placeholder text. This facilitates asynchronous 
+        // Monitor maxSize changes to update placeholder text. This facilitates asynchronous
         // obtaining of max size from server without slowing down form loading.
         this._updatePlaceholder();
-        $( this.element.closest( 'form.or' ) ).on( 'updateMaxSize', this._updatePlaceholder.bind( this ) );
+        this.element.closest( 'form.or' ).addEventListener( events.UpdateMaxSize().type, this._updatePlaceholder.bind( this ) );
 
         fileManager.init()
             .then( () => {
@@ -90,10 +94,18 @@ class Filepicker extends Widget {
             } );
     }
 
+    /**
+     * Updates placeholder
+     */
     _updatePlaceholder() {
         this.fakeInput.setAttribute( 'placeholder', t( 'filepicker.placeholder', { maxSize: fileManager.getMaxSizeReadable() || '?MB' } ) );
     }
 
+    /**
+     * Click action of reset button
+     *
+     * @param {Element} resetButton - reset button HTML element
+     */
     _setResetButtonListener( resetButton ) {
         if ( resetButton ) {
             resetButton.addEventListener( 'click', () => {
@@ -110,6 +122,9 @@ class Filepicker extends Widget {
         }
     }
 
+    /**
+     * Handles change listener
+     */
     _setChangeListener() {
         const that = this;
 
@@ -120,6 +135,7 @@ class Filepicker extends Widget {
                 if ( that.props.readonly || event.namespace !== 'propagate' ) {
                     that.fakeInput.focus();
                     event.stopImmediatePropagation();
+
                     return false;
                 }
             } )
@@ -133,6 +149,7 @@ class Filepicker extends Widget {
                 if ( event.namespace === 'propagate' ) {
                     // Trigger eventhandler to update instance value
                     $( this.element ).trigger( 'change.file' );
+
                     return false;
                 } else {
                     event.stopImmediatePropagation();
@@ -145,32 +162,44 @@ class Filepicker extends Widget {
                 fileName = getFilename( file, postfix );
 
                 // Process the file
-                fileManager.getFileUrl( file, fileName )
-                    .then( url => {
-                        // Update UI
-                        that._showPreview( url, that.props.mediaType );
-                        that._showFeedback();
-                        that._showFileName( fileName );
-                        if ( loadedFileName && loadedFileName !== fileName ) {
-                            that.element.removeAttribute( 'data-loaded-file-name' );
-                        }
-                        that._updateDownloadLink( url, fileName );
-                        // Update record
-                        $( that.element ).trigger( 'change.propagate' );
+                // Resize the file. Currently will resize an image.
+                this._resizeFile( file, that.props.mediaType )
+                    .then( resizedFile => {
+                        // Put information in file element that file is resized
+                        // Put resizedDataURI that will be used by fileManager.getCurrentFiles to get blob synchronously
+                        event.target.dataset.resized = true;
+                        event.target.dataset.resizedDataURI = resizedFile.dataURI;
+                        file = resizedFile.blob;
                     } )
-                    .catch( error => {
-                        // Update record to clear any existing valid value
-                        $( that.element ).val( '' ).trigger( 'change.propagate' );
-                        // Update UI
-                        that._showFileName( '' );
-                        that._showPreview( null );
-                        that._showFeedback( error, 'error' );
-                        that._updateDownloadLink( '', '' );
+                    .catch( () => {} )
+                    .finally( () => {
+                        fileManager.getFileUrl( file, fileName )
+                            .then( url => {
+                                // Update UI
+                                that._showPreview( url, that.props.mediaType );
+                                that._showFeedback();
+                                that._showFileName( fileName );
+                                if ( loadedFileName && loadedFileName !== fileName ) {
+                                    that.element.removeAttribute( 'data-loaded-file-name' );
+                                }
+                                that._updateDownloadLink( url, fileName );
+                                // Update record
+                                $( that.element ).trigger( 'change.propagate' );
+                            } )
+                            .catch( error => {
+                                // Update record to clear any existing valid value
+                                $( that.element ).val( '' ).trigger( 'change.propagate' );
+                                // Update UI
+                                that._showFileName( '' );
+                                that._showPreview( null );
+                                that._showFeedback( error, 'error' );
+                                that._updateDownloadLink( '', '' );
+                            } );
                     } );
             } );
 
         this.fakeInput.addEventListener( 'click', event => {
-            /* 
+            /*
                 The purpose of this handler is to selectively propagate clicks on the fake
                 input to the underlying file input (to show the file picker window).
                 It blocks propagation if the filepicker has a value to avoid accidentally
@@ -181,6 +210,7 @@ class Filepicker extends Widget {
             if ( this.props.readonly || this.originalInputValue || this.value ) {
                 this.fakeInput.focus();
                 event.stopImmediatePropagation();
+
                 return;
             }
             $( that.element ).trigger( 'click.propagate' );
@@ -193,29 +223,44 @@ class Filepicker extends Widget {
         } );
     }
 
+    /**
+     * Handle focus listener
+     */
     _setFocusListener() {
-
         // Handle focus on original input (goTo functionality)
         this.element.addEventListener( events.ApplyFocus().type, () => {
             this.fakeInput.focus();
         } );
     }
 
+    /**
+     * Sets file name as value
+     *
+     * @param {string} fileName - filename
+     */
     _showFileName( fileName ) {
         this.value = fileName;
         this.fakeInput.readOnly = !!fileName;
     }
 
+    /**
+     * @param {TranslatedError|Error} fb - Error instance
+     * @param {string} [status] - status
+     */
     _showFeedback( fb, status ) {
         const message = fb instanceof TranslatedError ? t( fb.translationKey, fb.translationOptions ) :
             fb instanceof Error ? fb.message :
-            fb || '';
+                fb || '';
         status = status || '';
         // replace text and replace all existing classes with the new status class
         this.feedback.textContent = message;
         this.feedback.setAttribute( 'class', `file-feedback ${status}` );
     }
 
+    /**
+     * @param {string} url - URL
+     * @param {string} mediaType - media type
+     */
     _showPreview( url, mediaType ) {
         let htmlStr;
 
@@ -240,26 +285,77 @@ class Filepicker extends Widget {
         }
     }
 
+    /**
+     * @param {File} file - image file to be resized
+     * @param {string} mediaType - media type
+     * @return {Promise<Blob|File>} resolves with blob, rejects with input file
+     */
+    _resizeFile( file, mediaType ) {
+        return new Promise( ( resolve, reject ) => {
+            if ( mediaType !== 'image/*' ) {
+                reject( file );
+            }
+
+            // file is image, resize it
+            if ( this.props && this.props.maxPixels ) {
+                resizeImage( file, this.props.maxPixels )
+                    .then( blob => {
+                        const reader = new FileReader();
+                        reader.addEventListener( 'load', function() {
+                            resolve( { blob, 'dataURI': reader.result } );
+                        }, false );
+                        reader.readAsDataURL( blob );
+                    } )
+                    .catch( () => {
+                        reject( file );
+                    } );
+            } else {
+                reject( file );
+            }
+        } );
+    }
+
+    /**
+     * @param {string} objectUrl - ObjectURL
+     * @param {string} fileName - filename
+     */
     _updateDownloadLink( objectUrl, fileName ) {
         updateDownloadLink( this.downloadLink, objectUrl, fileName );
     }
 
+    /**
+     * Disables widget
+     */
     disable() {
         this.element.disabled = true;
         this.question.querySelector( '.btn-reset' ).disabled = true;
     }
+
+    /**
+     * Enables widget
+     */
     enable() {
         this.element.disabled = false;
         this.question.querySelector( '.btn-reset' ).disabled = false;
     }
 
+    /**
+     * @type {object}
+     */
     get props() {
         const props = this._props;
         props.mediaType = this.element.getAttribute( 'accept' );
 
+        if ( this.element.dataset.maxPixels && isNumber( this.element.dataset.maxPixels ) ) {
+            props.maxPixels = parseInt( this.element.dataset.maxPixels, 10 );
+        }
+
         return props;
     }
 
+    /**
+     * @type {string}
+     */
     get value() {
         return this.fakeInput.value;
     }

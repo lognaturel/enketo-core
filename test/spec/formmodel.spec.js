@@ -1,11 +1,26 @@
 import { FormModel as Model } from '../../src/js/form-model';
+import events from '../../src/js/event';
 import forms from '../mock/forms';
 import config from '../../config';
 
 const getModel = filename => {
     const model = new Model( forms[ filename ].xml_model );
     model.init();
+
     return model;
+};
+
+// suppress particular console.warn messages
+console.__warn = console.warn;
+console.warn = ( msg ) => {
+    const surpressedMessages = [
+        'Model has no instanceID element'
+    ];
+    if ( surpressedMessages.includes( msg ) ){
+        return;
+    } else {
+        console.__warn( msg );
+    }
 };
 
 // I don't remember why this functionality exists
@@ -46,12 +61,13 @@ describe( 'Instantiating a model', () => {
     } );
 
     it( 'without an instanceID node, returns an error', () => {
-        const result = new Model( modelStr ).init();
+        const result = new Model( '<data></data>' ).init();
 
         expect( result.length ).toEqual( 1 );
         expect( /Missing\sinstanceID/.test( result[ 0 ] ) ).toEqual( true );
     } );
 } );
+
 
 describe( 'Data node getter', () => {
     let i;
@@ -350,14 +366,14 @@ describe( 'Data node remover', () => {
             node = data.node( '/thedata/nodeA' );
 
         expect( node.getElements().length ).toEqual( 1 );
-        /*data.node( '/thedata/nodeA' )*/
+
         node.remove();
         expect( node.getElements().length ).toEqual( 0 );
         expect( data.node( '/thedata/nodeA' ).getElements().length ).toEqual( 0 );
     } );
 
     it( 'can remove nodes with a . in the nodeName', () => {
-        const model = new Model( '<model><instance><data><F27./></data></instance></model>' );
+        const model = new Model( '<model><instance><data><F27./><meta><instanceID/></meta></data></instance></model>' );
         const path = '/data/F27.';
         let node;
 
@@ -372,12 +388,12 @@ describe( 'Data node remover', () => {
 
 describe( 'DeprecatedID value getter', () => {
     it( 'returns "" if deprecatedID node does not exist', () => {
-        const model = new Model( '<model><instance><data></data></instance></model>' );
+        const model = new Model( '<model><instance><data><meta><instanceID/></meta></data></instance></model>' );
         model.init();
         expect( model.deprecatedID ).toEqual( '' );
     } );
     it( 'returns value of deprecatedID node', () => {
-        const model = new Model( '<model><instance><data><meta><deprecatedID>a</deprecatedID></meta></data></instance></model>' );
+        const model = new Model( '<model><instance><data><meta><instanceID/><deprecatedID>a</deprecatedID></meta></data></instance></model>' );
         model.init();
         expect( model.deprecatedID ).toEqual( 'a' );
     } );
@@ -385,47 +401,33 @@ describe( 'DeprecatedID value getter', () => {
 
 describe( 'getRepeatSeries', () => {
     // Note the strategic placements of whitespace '\n'
-    const model = new Model( '<model><instance><a>\n<r><b/><nR/>\n<nR/></r>\n<r><b/><nR/><nR/>\n<nR/></r></a></instance></model>' );
+    const model = new Model( `
+        <model>
+            <instance>
+                <a>
+                    <r>
+                        <b/>
+                        <nR/>
+                        <nR/>
+                    </r>
+                    <r>
+                        <b/>
+                        <nR/>
+                        <nR/>
+                        <nR/>
+                    </r>
+                    <meta>
+                        <instanceID/>
+                    </meta>
+                </a>
+            </instance>
+        </model>` );
     model.init();
     model.extractFakeTemplates( [ '/a/r', '/a/r/nR' ] );
     it( 'returns the elements in one series of repeats', () => {
         expect( model.getRepeatSeries( '/a/r', 0 ).length ).toEqual( 2 );
         expect( model.getRepeatSeries( '/a/r/nR', 0 ).length ).toEqual( 2 );
         expect( model.getRepeatSeries( '/a/r/nR', 1 ).length ).toEqual( 3 );
-    } );
-} );
-
-
-describe( 'getXPath', () => {
-    const xmlStr = '<root><path><to><node/><repeat><number/></repeat><repeat><number/><number/></repeat></to></path></root>';
-    const model = new Model( xmlStr );
-    model.init();
-
-    it( 'returns /root/path/to/node without parameters', () => {
-        const node = model.xml.querySelector( 'node' );
-        expect( model.getXPath( node ) ).toEqual( '/root/path/to/node' );
-    } );
-
-    it( 'returns same /root/path/to/node if first parameter is null', () => {
-        const node = model.xml.querySelector( 'node' );
-        expect( model.getXPath( node, null ) ).toEqual( '/root/path/to/node' );
-    } );
-
-    it( 'returns path from context first node provided as parameter', () => {
-        const node = model.xml.querySelector( 'node' );
-        expect( model.getXPath( node, 'root' ) ).toEqual( '/path/to/node' );
-    } );
-    it( 'returned path includes no positions if there are no siblings with the same name along the path', () => {
-        const node = model.xml.querySelector( 'node' );
-        expect( model.getXPath( node, 'root', true ) ).toEqual( '/path/to/node' );
-    } );
-    it( 'returned path includes positions when asked', () => {
-        const node = model.xml.querySelectorAll( 'number' )[ 1 ];
-        expect( model.getXPath( node, 'root', true ) ).toEqual( '/path/to/repeat[2]/number' );
-    } );
-    it( 'returned path includes positions when asked (multiple levels)', () => {
-        const node = model.xml.querySelectorAll( 'number' )[ 2 ];
-        expect( model.getXPath( node, 'root', true ) ).toEqual( '/path/to/repeat[2]/number[2]' );
     } );
 } );
 
@@ -475,7 +477,7 @@ describe( 'XPath Evaluator (see github.com/enketo/enketo-xpathjs for comprehensi
 
 // This test makes sure that whatever date strings are returned by the XPath evaluator can be dealt with by the form engine
 describe( 'dates returned by the XPath evaluator ', () => {
-    const model = new Model( '<model><instance><data></data></instance></model>' );
+    const model = new Model( '<model><instance><data><meta><instanceID/></meta></data></instance></model>' );
     model.init();
     [
         [ 'date("2018-01-01")', '2018-01-01', 'date' ],
@@ -555,13 +557,13 @@ describe( 'converting absolute paths', () => {
 
     ].forEach( test => {
         it( 'converts correctly when the model and instance node are included in the model', () => {
-            const model = new Model( '<model><instance><root/></instance></model>' );
+            const model = new Model( '<model><instance><root><meta><instanceID/></meta></root></instance></model>' );
             const expected = test[ 1 ] || test[ 0 ];
             model.init();
             expect( model.shiftRoot( test[ 0 ] ) ).toEqual( expected );
         } );
         it( 'does nothing if model and instance node are absent in the model', () => {
-            const model = new Model( '<data><nodeA/></data>' );
+            const model = new Model( '<data><nodeA/><meta><instanceID/></meta></data>' );
             expect( model.shiftRoot( test[ 0 ] ) ).toEqual( test[ 0 ] );
         } );
     } );
@@ -589,11 +591,23 @@ describe( 'converting instance("id") to absolute paths', () => {
 describe( 'converting expressions with current() for context /data/node', () => {
     const context = '/data/node';
 
+    // Note: these test include current()/node paths that may not have a use case in ODK XForms
     [
-        [ 'instance("a")/path/to/node[filter = current()/data/some/node]', 'instance("a")/path/to/node[filter = /data/some/node]' ],
+        [ 'instance("a")/path/to/node[filter = current()/some/nodeA]', 'instance("a")/path/to/node[filter = /data/node/some/nodeA]' ],
         [ 'instance("a")/path/to/node[filter = current()/.]', 'instance("a")/path/to/node[filter = /data/node/.]' ],
-        [ 'instance("a")/path/to/node[filter = current()/../some/node]', 'instance("a")/path/to/node[filter = /data/node/../some/node]' ]
-
+        [ 'instance("a")/path/to/node[filter = current()/../some/node]', 'instance("a")/path/to/node[filter = /data/node/../some/node]' ],
+        [ 'instance("a")/path/to/node[animaltypes = current()/../animaltype and groupanimals = current()/../groupanimal ]',
+            'instance("a")/path/to/node[animaltypes = /data/node/../animaltype and groupanimals = /data/node/../groupanimal ]'
+        ],
+        [ 'instance("a")/path/to/node[filtera = current()/../some/node and filterb = current()/../some/node and filterc = current()/a and filterd = current()/a]',
+            'instance("a")/path/to/node[filtera = /data/node/../some/node and filterb = /data/node/../some/node and filterc = /data/node/a and filterd = /data/node/a]'
+        ],
+        [ 'instance("a")/root/item[name = current()/. or not(/data/repeat/option) ]',
+            'instance("a")/root/item[name = /data/node/. or not(/data/repeat/option) ]'
+        ],
+        [ 'instance("a")/root/item[name = current() or not(/data/repeat/option) ]',
+            'instance("a")/root/item[name = /data/node or not(/data/repeat/option) ]'
+        ],
     ].forEach( test => {
         it( 'happens correctly', () => {
             const model = new Model( '<model><instance><root/></instance></model>' );
@@ -703,7 +717,7 @@ describe( 'external instances functionality', () => {
         expect( loadErrors.length ).toEqual( 0 );
         expect( model.xml.querySelector( 'instance#cities > root > item > country' ).textContent ).toEqual( 'nl' );
 
-        // Now check that the orginal external XML docs are stil the same. Very important for e.g. 
+        // Now check that the orginal external XML docs are stil the same. Very important for e.g.
         // form reset functionality in apps.
         // https://github.com/kobotoolbox/enketo-express/issues/1086
         expect( external[ 0 ].xml.querySelector( 'country' ).textContent ).toEqual( 'nl' );
@@ -1362,8 +1376,8 @@ describe( 'merging an instance into the model', () => {
         } );
 
     } );
-} );
 
+} );
 
 // Runs fine headlessly locally, but not on Travis for some reason.
 describe( 'instanceID and deprecatedID are populated upon model initilization', () => {
@@ -1424,4 +1438,31 @@ describe( 'instanceID and deprecatedID are populated upon model initilization', 
         expect( eventObjects[ 1 ].nodes ).toEqual( [ 'deprecatedID' ] );
 
     } );
+
 } );
+
+describe( 'odk-instance-first-load event', () => {
+
+    const modelStr = '<data><a><meta><instanceID/></meta></a></data>';
+    const instanceStr = '<data><a>1</a></data>';
+
+    it( 'fires once when starting a new record', () => {
+        const model = new Model( { modelStr } );
+        let eventsOccurred = 0;
+
+        model.events.addEventListener( events.InstanceFirstLoad().type, () => eventsOccurred++ );
+        model.init();
+        expect( eventsOccurred ).toEqual( 1 );
+    } );
+
+    it( 'does not fire when loading an existing record', () => {
+        const model = new Model( { modelStr, instanceStr } );
+        let eventsOccurred = 0;
+
+        model.events.addEventListener( events.InstanceFirstLoad().type, () => eventsOccurred++ );
+        model.init();
+        expect( eventsOccurred ).toEqual( 0 );
+    } );
+
+} );
+

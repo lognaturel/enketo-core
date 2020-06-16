@@ -15,6 +15,7 @@
                         children.push( node );
                     }
                 }
+
                 return children;
             }
         } );
@@ -23,6 +24,7 @@
 
 /**
  * A spec-compliant polyfill for 'parentElement'.
+ *
  * @author Frederik Wessberg <https://github.com/wessberg>
  * @version 1.0.0
  */
@@ -72,7 +74,7 @@
 //from: https://github.com/jserz/js_piece/blob/master/DOM/ChildNode/after()/after().md
 ( function( arr ) {
     arr.forEach( function( item ) {
-        if ( item.hasOwnProperty( 'after' ) ) {
+        if ( Object.prototype.hasOwnProperty.call( item, 'after' ) ) {
             return;
         }
         Object.defineProperty( item, 'after', {

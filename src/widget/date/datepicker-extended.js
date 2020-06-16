@@ -9,28 +9,22 @@ import '../../js/dropdown.jquery';
 /**
  * Extends eternicode's bootstrap-datepicker without changing the original.
  * https://github.com/eternicode/bootstrap-datepicker
+ *
+ * @augments Widget
  */
 class DatepickerExtended extends Widget {
-
+    /**
+     * @type {string}
+     */
     static get selector() {
-        return '.question input[type="date"]:not([readonly])';
+        return '.question input[type="date"]';
     }
 
+    /**
+     * @type {boolean}
+     */
     static condition() {
-        const badSamsung = /GT-P31[0-9]{2}.+AppleWebKit\/534\.30/;
-
-        /*
-         * Samsung mobile browser (called "Internet") has a weird bug that appears sometimes (?) when an input field
-         * already has a value and is edited. The new value YYYY-MM-DD prepends old or replaces the year of the old value and first hyphen. E.g.
-         * existing: 2010-01-01, new value entered: 2012-12-12 => input field shows: 2012-12-1201-01.
-         * This doesn't seem to effect the actual value of the input, just the way it is displayed. But if the incorrectly displayed date is then
-         * attempted to be edited again, it does get the incorrect value and it's impossible to clear this and create a valid date.
-         *
-         * browser: "Mozilla/5.0 (Linux; U; Android 4.1.1; en-us; GT-P3113 Build/JRO03C) AppleWebKit/534.30 (KHTML, like Gecko) Version/4.0 Safari/534.30";
-         * webview: "Mozilla/5.0 (Linux; U; Android 4.1.2; en-us; GT-P3100 Build/JZO54K) AppleWebKit/534.30 (KHTML, like Gecko) Version/4.0 Safari/534.30"
-         */
-
-        return !support.touch || !support.inputTypes.date || badSamsung.test( navigator.userAgent );
+        return !support.touch || !support.inputTypes.date;
     }
 
     _init() {
@@ -54,22 +48,20 @@ class DatepickerExtended extends Widget {
         this._setFocusHandler( this.$fakeDateI );
         this._setResetHandler( this.$fakeDateI );
 
-        this.$fakeDateI.datepicker( {
-            format: this.settings.format,
-            autoclose: true,
-            todayHighlight: true,
-            startView: this.settings.startView,
-            minViewMode: this.settings.minViewMode,
-            forceParse: false
-        } );
-
+        this.enable();
         this.value = this.element.value;
+
+        // It is much easier to first enable and disable, and not as bad it seems, since readonly will become dynamic eventually.
+        if ( this.props.readonly ) {
+            this.disable();
+        }
     }
 
     /**
      * Creates fake date input elements
-     * @param  {string} format the date format
-     * @return {jQuery}        the jQuery-wrapped fake date input element
+     *
+     * @param {string} format - The date format
+     * @return {jQuery} The jQuery-wrapped fake date input element
      */
     _createFakeDateInput( format ) {
         const $dateI = $( this.element );
@@ -85,7 +77,7 @@ class DatepickerExtended extends Widget {
     /**
      * Copy manual changes that were not detected by bootstrap-datepicker (one without pressing Enter) to original date input field
      *
-     * @param { jQuery } $fakeDateI Fake date input element
+     * @param {jQuery} $fakeDateI - Fake date input element
      */
     _setChangeHandler( $fakeDateI ) {
         const settings = this.settings;
@@ -95,7 +87,7 @@ class DatepickerExtended extends Widget {
             let value = e.type === 'paste' ? getPasteData( e ) : this.value;
 
             if ( value.length > 0 ) {
-                // Note: types.date.convert considers numbers to be a number of days since the epoch 
+                // Note: types.date.convert considers numbers to be a number of days since the epoch
                 // as this is what the XPath evaluator may return.
                 // For user-entered input, we want to consider a Number value to be incorrect, expect for year input.
                 if ( isNumber( value ) && settings.format !== 'yyyy' ) {
@@ -106,18 +98,19 @@ class DatepickerExtended extends Widget {
                 }
             }
 
-            // Here we have to do something unusual to prevent native inputs from automatically 
+            $fakeDateI.val( this._toDisplayDate( convertedValue ) ).datepicker( 'update' );
+
+            // Here we have to do something unusual to prevent native inputs from automatically
             // changing 2012-12-32 into 2013-01-01
             // convertedValue is '' for invalid 2012-12-32
-            if ( convertedValue === '' || this.originalInputValue !== convertedValue ) {
-                if ( e.type === 'paste' ) {
-                    e.stopImmediatePropagation();
-                }
-                this.originalInputValue = convertedValue;
-                this.element.blur();
+            if ( convertedValue === '' && e.type === 'paste' ) {
+                e.stopImmediatePropagation();
             }
 
-            $fakeDateI.val( this._toDisplayDate( convertedValue ) ).datepicker( 'update' );
+            // Avoid triggering unnecessary change events as they mess up sensitive custom applications (OC)
+            if ( this.originalInputValue !== convertedValue ) {
+                this.originalInputValue = convertedValue;
+            }
 
             return false;
         } );
@@ -126,7 +119,7 @@ class DatepickerExtended extends Widget {
     /**
      * Reset button handler
      *
-     * @param { jQuery } $fakeDateI Fake date input element
+     * @param {jQuery} $fakeDateI - Fake date input element
      */
     _setResetHandler( $fakeDateI ) {
         $fakeDateI.next( '.btn-reset' ).on( 'click', () => {
@@ -140,7 +133,7 @@ class DatepickerExtended extends Widget {
      * Handler for focus events.
      * These events on the original input are used to check whether to display the 'required' message
      *
-     * @param { jQuery } $fakeDateI Fake date input element
+     * @param {jQuery} $fakeDateI - Fake date input element
      */
     _setFocusHandler( $fakeDateI ) {
         // Handle focus on original input (goTo functionality)
@@ -149,28 +142,69 @@ class DatepickerExtended extends Widget {
         } );
     }
 
-    _toActualDate( date ) {
+    /**
+     * @param {string} [date] - date
+     * @return {string} the actual date
+     */
+    _toActualDate( date = '' ) {
+        date = date.trim();
+
         return date && this.settings.format === 'yyyy' && date.length < 5 ? `${date}-01-01` : ( date && this.settings.format === 'yyyy-mm' && date.length < 8 ? `${date}-01` : date );
     }
 
-    _toDisplayDate( date ) {
+    /**
+     * @param {string} [date] - date
+     * @return {string} the display date
+     */
+    _toDisplayDate( date = '' ) {
+        date = date.trim();
+
         return date && this.settings.format === 'yyyy' ? date.substring( 0, 4 ) : ( this.settings.format === 'yyyy-mm' ? date.substring( 0, 7 ) : date );
+    }
+
+    disable() {
+        this.$fakeDateI.datepicker( 'destroy' );
+        this.$fakeDateI.prop( 'disabled', true );
+        this.$fakeDateI.next( '.btn-reset' ).prop( 'disabled', true );
+    }
+
+    enable() {
+        this.$fakeDateI.datepicker( {
+            format: this.settings.format,
+            autoclose: true,
+            todayHighlight: true,
+            startView: this.settings.startView,
+            minViewMode: this.settings.minViewMode,
+            forceParse: false
+        } );
+        this.$fakeDateI.prop( 'disabled', false );
+        this.$fakeDateI.next( '.btn-reset' ).prop( 'disabled', false );
     }
 
     update() {
         this.value = this.element.value;
     }
 
+    /**
+     * @type {string}
+     */
     get displayedValue() {
         return this.question.querySelector( '.widget input' ).value;
     }
 
+    /**
+     * @type {string}
+     */
     get value() {
         return this._toActualDate( this.displayedValue );
     }
 
     set value( date ) {
-        this.$fakeDateI.datepicker( 'setDate', this._toDisplayDate( date ) );
+        if ( this.$fakeDateI[ 0 ].disabled ) {
+            this.$fakeDateI[ 0 ].value = this._toDisplayDate( date );
+        } else {
+            this.$fakeDateI.datepicker( 'setDate', this._toDisplayDate( date ) );
+        }
     }
 
 }

@@ -27,65 +27,80 @@ import event from '../../js/event';
 import { t } from 'enketo/translator';
 import '../../js/dropdown.jquery';
 
+const range = document.createRange();
+
 /**
  * Bootstrap Select picker that supports single and multiple selects
  * A port of https://github.com/silviomoreto/bootstrap-select
  *
+ * @augments Widget
  */
 class DesktopSelectpicker extends Widget {
-
+    /**
+     * @type {string}
+     */
     static get selector() {
         return '.question select';
     }
 
+    /**
+     * @type {boolean}
+     */
     static get list() {
         return true;
     }
 
+    /**
+     * @return {boolean} Whether additional condition to instantiate the widget is met.
+     */
     static condition() {
         return !support.touch;
     }
 
     _init() {
-        const $select = $( this.element );
-        $select.css( 'display', 'none' );
-        const $template = this._createLi( this._getTemplate() );
-        this.$picker = $template.insertAfter( $select );
+        const select =  this.element;
+        select.style.display = 'none';
+        const template = this._getTemplate();
+        select.after( template );
+        this.picker = this.question.querySelector( '.bootstrap-select' );
+        if ( this.props.readonly ) {
+            this.disable();
+        }
         this._clickListener();
         this._focusListener();
     }
+
+    /**
+     * @return {Element} HTML fragment
+     */
     _getTemplate() {
-        return `
+        const template = range.createContextualFragment( `
         <div class="btn-group bootstrap-select widget clearfix">
             <button type="button" class="btn btn-default dropdown-toggle clearfix" data-toggle="dropdown">
-                <span class="selected">__SELECTED_OPTIONS</span><span class="caret"></span>
+                <span class="selected"></span><span class="caret"></span>
             </button>
-            <ul class="dropdown-menu" role="menu">__ADD_LI</ul>
-        </div>`;
+            <ul class="dropdown-menu" role="menu">${this._getLisHtml()}</ul>
+        </div>` );
+        this._showSelected( template.querySelector( '.selected' ) );
+
+        return template;
     }
 
-    _createLi( template ) {
-        const li = [];
-        let liHtml = '';
+    /**
+     * Generates HTML text for <li> elements
+     */
+    _getLisHtml( ) {
         const inputAttr = this.props.multiple ? 'type="checkbox"' : `type="radio" name="${Math.random() * 100000}"`;
-        const readonlyAttr = this.props.readonly ? ' readonly="readonly"' : '';
-        const disabledAttr = this.props.readonly ? ' disabled="disabled"' : '';
-        const disabledClass = this.props.readonly ? ' class="disabled"' : '';
 
-        $( this.element ).find( 'option' ).each( function() {
-            li.push( {
-                label: $( this ).text(),
-                selected: $( this ).is( ':selected' ),
-                value: $( this ).attr( 'value' )
-            } );
-        } );
+        return [ ...this.element.querySelectorAll( 'option' ) ]
+            .map( option => {
+                const label = option.textContent;
+                const selected = option.matches( ':checked' );
+                const value = option.value;
+                if ( value ) {
+                    const checkedInputAttr = selected ? ' checked="checked"' : '';
+                    const checkedLiAttr = selected ? 'class="active"' : '';
 
-        if ( li.length > 0 ) {
-            template = template.replace( '__SELECTED_OPTIONS', this._createSelectedStr() );
-            for ( let i = 0; i < li.length; i++ ) {
-                if ( li[ i ].value ) {
-                    const checkedInputAttr = li[ i ].selected ? ' checked="checked"' : '';
-                    const checkedLiAttr = li[ i ].selected ? 'class="active"' : '';
                     /**
                      * e.g.:
                      * <li checked="checked">
@@ -96,54 +111,60 @@ class DesktopSelectpicker extends Widget {
                      *       </a>
                      *    </li>
                      */
-                    liHtml += `
-                    <li ${disabledClass}${checkedLiAttr}>
-                        <a class="option-wrapper" tabindex="-1" href="#">
-                            <label>
-                                <input class="ignore" ${inputAttr}${checkedInputAttr}${readonlyAttr}${disabledAttr} value="${li[ i ].value}" />
-                                <span class="option-label">${li[ i ].label}</span>
-                            </label>
-                        </a>
-                    </li>`;
+                    return `
+                        <li ${checkedLiAttr}>
+                            <a class="option-wrapper" tabindex="-1" href="#">
+                                <label>
+                                    <input class="ignore" ${inputAttr}${checkedInputAttr} value="${value}" />
+                                    <span class="option-label">${label}</span>
+                                </label>
+                            </a>
+                        </li>`;
+                } else {
+                    return '';
                 }
-            }
-        }
-
-        template = template.replace( '__ADD_LI', liHtml );
-
-        return $( template );
+            } ).join( '' );
     }
-
 
     /**
-     * create text to show in closed picker
-     * @param  {jQuery=} $select  jQuery-wrapped select element
-     * @return {string}
+     * Update text to show in closed picker
+     *
+     * @param {Element} el - HTML element to show text in
      */
-    _createSelectedStr() {
-        const selectedLabels = [];
-        const $select = $( this.element );
-        $select.find( 'option:selected' ).each( function() {
-            if ( $( this ).attr( 'value' ).length > 0 ) {
-                selectedLabels.push( $( this ).text() );
-            }
-        } );
+    _showSelected( el ) {
+        const selectedLabels = [ ...this.element.querySelectorAll( 'option:checked' ) ]
+            .filter( option =>  option.getAttribute( 'value' ).length )
+            .map( option => option.textContent );
+
+        // keys for i18next parser to pick up:
+        // t( 'selectpicker.numberselected' );
 
         if ( selectedLabels.length === 0 ) {
-            return t( 'selectpicker.noneselected' );
+            // do not use variable for translation key to not confuse i18next-parser
+            el.textContent = t( 'selectpicker.noneselected' );
+            el.dataset.i18n =  'selectpicker.noneselected';
+            delete el.dataset.i18nNumber;
+
         } else if ( selectedLabels.length === 1 ) {
-            return selectedLabels[ 0 ];
+            el.textContent = selectedLabels[ 0 ];
+            delete el.dataset.i18n;
+            delete el.dataset.i18nNumber;
         } else {
-            return t( 'selectpicker.numberselected', {
-                number: selectedLabels.length
-            } );
+            const number = selectedLabels.length;
+            // do not use variable for translation key to not confuse i18next-parser
+            el.textContent = t( 'selectpicker.numberselected', { number } );
+            el.dataset.i18n = 'selectpicker.numberselected';
+            el.dataset.i18nNumber = number ;
         }
     }
 
+    /**
+     * Handles click listener
+     */
     _clickListener() {
         const _this = this;
 
-        this.$picker
+        $( this.picker )
             .on( 'click', 'li:not(.disabled)', function( e ) {
                 const li = this;
                 const input = li.querySelector( 'input' );
@@ -159,9 +180,9 @@ class DesktopSelectpicker extends Widget {
                 }
 
                 if ( !_this.props.multiple ) {
-                    _this.$picker.find( 'li' ).removeClass( 'active' );
-                    getSiblingElementsAndSelf( option, 'option' ).forEach( el => { el.selected = false; } );
-                    _this.$picker.find( 'input' ).prop( 'checked', false );
+                    _this.picker.querySelectorAll( 'li' ).forEach( li=> li.classList.remove( 'active' ) );
+                    getSiblingElementsAndSelf( option, 'option' ).forEach( option => { option.selected = false; } );
+                    _this.picker.querySelectorAll( 'input' ).forEach( input  => input.checked = false );
                 } else {
                     //don't close dropdown for multiple select
                     e.stopPropagation();
@@ -171,7 +192,7 @@ class DesktopSelectpicker extends Widget {
                 // we had to use event.preventDefault() on <a> tag click events.
                 // This broke view updates when clicking on the radiobuttons and checkboxes directly
                 // although the underlying values did change correctly.
-                // 
+                //
                 // It has to do with event propagation. I could not figure out how to fix it.
                 // Therefore I used a workaround by slightly delaying the status changes.
                 setTimeout( () => {
@@ -185,7 +206,9 @@ class DesktopSelectpicker extends Widget {
                         input.checked = true;
                     }
 
-                    _this.$picker.find( '.selected' ).html( _this._createSelectedStr() );
+                    const showSelectedEl = _this.picker.querySelector( '.selected' );
+                    _this._showSelected( showSelectedEl );
+
                     select.dispatchEvent( new event.Change() );
                 }, 10 );
 
@@ -207,6 +230,7 @@ class DesktopSelectpicker extends Widget {
             } )
             .on( 'click', 'li.disabled', e => {
                 e.stopPropagation();
+
                 return false;
             } )
             .on( 'click', 'a', e => {
@@ -216,28 +240,48 @@ class DesktopSelectpicker extends Widget {
             } );
     }
 
+    /**
+     * Handles focus listener
+     */
     _focusListener() {
         const _this = this;
 
         // Focus on original element (form.goTo functionality)
         this.element.addEventListener( events.ApplyFocus().type, () => {
-            _this.$picker.find( '.dropdown-toggle' ).focus();
+            _this.picker.querySelector( '.dropdown-toggle' ).focus();
         } );
-
     }
 
+    /**
+     * Disables widget
+     */
     disable() {
-        this.$picker.find( 'li' ).addClass( 'disabled' );
+        this.picker.querySelectorAll( 'li' ).forEach( el => {
+            el.classList.add( 'disabled' );
+            const input = el.querySelector( 'input' );
+            // are both below necessary?
+            input.disabled = true;
+            input.readOnly = true;
+        } );
     }
 
+    /**
+     * Enables widget
+     */
     enable() {
-        if ( !this.props.readonly ) {
-            this.$picker.find( 'li' ).removeClass( 'disabled' );
-        }
+        this.picker.querySelectorAll( 'li' ).forEach( el => {
+            el.classList.remove( 'disabled' );
+            const input = el.querySelector( 'input' );
+            input.disabled = false;
+            input.readOnly = false;
+        } );
     }
 
+    /**
+     * Updates widget
+     */
     update() {
-        this.$picker.remove();
+        this.picker.remove();
         this._init();
     }
 }

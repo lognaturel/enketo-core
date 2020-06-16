@@ -3,8 +3,374 @@ Change Log
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](http://semver.org/).
 
-[Unreleased]
+[5.16.2] - 2020-06-12
+----------------------
+##### Changed
+- Made fixed English geopicker warning translatable.
+
+##### Fixed
+- The "selected" message in the desktop select picker does not switch language immediately.
+- Image-map widget is transparent, not visible but functional, when it is included on a non-first page.
+
+[5.16.1] - 2020-06-05
+----------------------
+##### Fixed
+- Readonly select-minimal widgets are not readonly.
+- Readonly select-minimal widget get erroneously enabled when relevancy changes to positive.
+- Calculation with form control fires input-update event upon load if the underlying model value doesn't change.
+- Number mask do not work in non-first repeat instances.
+
+[5.16.0] - 2020-05-28
+----------------------
+##### Removed
+- Configuration option `clearIrrelevantImmediately`. Non-relevant values are never immediately cleared.
+
+##### Changed
+- Changed external instance XML document type check for Enketo Validate use.
+
+[5.15.5] - 2020-05-27
+----------------------
+##### Fixed
+- Date fields in Grid Theme do not show values in print view.
+- Itemsets inside a non-relevant groups or questions are not updated when group becomes relevant if choice_filter condition does not include node that makes group/question relevant.
+
+[5.15.4] - 2020-05-15
+----------------------
+##### Changed
+- Code style
+
+##### Fixed
+- SVG image in image-map widget is not always displayed in its entirety. Any SVG-specified `viewBox` attribute is overwritten.
+- SVG `<circle>` element with `id` attribute is not working in the image-map widget.
+- SVG `<circle>` element with a parent `<g>` element with an id attribute is not working in the image-map widget.
+- Geo widget update function doesn't redraw a map, e.g. when changing language.
+
+[5.15.3] - 2020-05-12
 ---------------------
+##### Fixed
+- When printing long text it overflows into the question below.
+
+[5.15.2] - 2020-05-05
+---------------------
+##### Fixed
+- Textarea not resizing correctly when printing in pages mode.
+
+[5.15.1] - 2020-05-01
+---------------------
+##### Changed
+- The resetView method now returns the new form element.
+
+[5.15.0] - 2020-04-24
+----------------------
+##### Added
+- Support for multiple setvalue/xforms-value-changed actions under the same form control.
+- A "goto-invisible" event to trigger when a "goto" instruction points to a field without a form control.
+
+##### Fixed
+- Border shown when printing a Grid Theme form.
+
+[5.14.3] - 2020-04-15
+----------------------
+##### Fixed
+- When instantiating a single-language form with an explicit language override, itemsets may fail to populate.
+- Empty readonly text fields take up unnecessary space in the print view.
+- Non-relevant questions in Grid theme are not getting the correct width in the print view.
+
+[5.14.2] - 2020-04-14
+----------------------
+##### Changed
+- Form instantiation now recommended with form Element instead of form selector.
+- Prepared for language syncing feature in Enketo Express.
+
+##### Fixed
+- The dotted lines on Grid theme printouts are not positioned at the bottom of cells.
+- A text question on Grid theme printouts that has only text questions on the same row (or nothing else), has too little space to write.
+- Date/datetime/time questions take up too much vertical space on Grid theme printouts.
+
+[5.14.1] - 2020-03-31
+----------------------
+##### Fixed
+- Loading error if multiple autocomplete questions with static lists are used inside a repeat (regression in 5.14.0)
+
+[5.14.0] - 2020-03-27
+----------------------
+##### Removed
+- Example IE11 build tasks and loading tricks.
+
+##### Changed
+- Improved performance of autocomplete questions inside repeats that use static option lists.
+
+##### Fixed
+- Option label images in Likert widget are not centered below text.
+
+[5.13.2] - 2020-03-20
+----------------------
+##### Fixed
+- If last element of last row of form with Grid theme is hidden, the cells of that last row are not resized properly in the print view.
+- Textareas not resizing in pages mode when loading large text values on non-first pages.
+
+
+[5.13.1] - 2020-02-28
+----------------------
+##### Fixed
+- `jr:count` does not work if number is provided instead of /path/to/count.
+- Date calculations in readonly fields do not show a value if not loaded from record.
+
+[5.13.0] - 2020-02-14
+----------------------
+##### Changed
+- The odk:generated-by attribute check on the primary instance (introduced in 5.11.0), was changed to a check for odk:xforms-version on the model node.
+
+##### Fixed
+- Readonly date widgets can be edited or reset (regression in 5.12.0).
+
+[5.12.0] - 2020-02-12
+---------------------
+##### Added
+- Support for setvalue action with xforms-value-changed event.
+- Basic support for "thousands-sep" appearance on integer and decimal fields.
+
+##### Changed
+- No longer trigger an inputupdate event when loading an existing itemset value.
+- "valuechange" event was changed to "xforms-value-changed" (TBC!)
+
+##### Fixed
+- Text-print widget causes double URL to be shown in print view for URL widget.
+- Last row of Grid Theme form may have incorrect cell heights.
+- Readonly month-year or year inputs show full underlying value instead of month-year/year.
+
+[5.11.7] - 2020-01-28
+---------------------
+##### Fixed
+- Exception occurs when first repeat is created that contains a calculation if `validateContinuously` is set to `true`.
+- Rows are not always stretching correctly when printing Grid Theme forms.
+
+[5.11.6] - 2020-01-22
+---------------------
+##### Fixed
+- Text-print widget is also instantiated for comment widgets, causing an issue for a customized Enketo Express application.
+- If repeats are removed in pages mode, the pages get messed up.
+- If repeats are added in pages mode during form load (default instances or loading existing record with multiple instances), the Next/Back buttons are not updated when they should be.
+
+[5.11.5] - 2020-01-21
+---------------------
+##### Fixed
+- Forms in pages mode sometimes do not show correct first page upon load (regression since 5.11.3).
+- Forms in pages mode with groups or repeats without field-list appearance show empty pages (regression since 5.11.3).
+
+[5.11.4] - 2020-01-20
+---------------------
+##### Fixed
+- Radiobutton questions inside repeats allow multiple selections (regression since 5.11.0).
+- Comment questions in a form in Pages mode without field-list appearances, add an empty page.
+
+[5.11.2] - 2020-01-10
+---------------------
+##### Fixed
+- Annotation and draw widget on mobile devices slightly decrease image size every time a switch between fullscreen (draw) view and full form view.
+- Annotation widget on mobile devices reveals keyboard when the colorpicker is clicked.
+
+[5.11.1] - 2020-01-06
+---------------------
+##### Changed
+- No longer trigger an inputupdate event when setting default values in view.
+
+##### Fixed
+- Annotate widget broken when uploading new image.
+
+[5.11.0] - 2019-12-31
+---------------------
+##### Added
+- Support for setvalue action with odk-new-repeat and odk-instance-first-load events.
+
+##### Fixed
+- Forms with a `odk:generated-by` attribute on the primary instance child, will always have absolute repeat node references evaluated correctly (e.g. for forms generated by pyxform 1.0.0 onwards).
+
+[5.10.0] - 2019-12-18
+---------------------
+##### Added
+- Support for default drawings in all 3 drawing widgets.
+
+##### Fixed
+- Some PDF viewers do not show radiobuttons with an opacity (e.g. a disabled radio button).
+- MS Edge does not show any checkmarks in printouts of radiobuttons and checkboxes.
+- Overflowing content in text form controls is not shown on printout.
+
+[5.9.2] - 2019-11-22
+---------------------
+##### Fixed
+- `current()` without a path, and `current()/path/to/node` without a step down do not work.
+- Datetime picker does not load a midnight datetime value.
+- Analog scale layout messed up in printout.
+
+[5.9.1] - 2019-11-04
+---------------------
+##### Fixed
+- If a predicate consists of parts that contain multiple `current()` calls, the expression is not evaluated correctly (noticeable inside repeats for multiple-choice questions with complex choice filters).
+
+[5.9.0] - 2019-10-23
+---------------------
+##### Changed
+- Now using native datetime picker on mobile browsers.
+
+##### Fixed
+- Option labels break in middle of word instead of a space.
+- Readonly native date/time/datetime picker in iOS is fully functional when it should not be (re-introduced bug in iOS13).
+- Exception in geo widget (though may not have had negative consequences).
+
+[5.8.0] - 2019-10-04
+--------------------
+##### Added
+- Rating widget!
+
+##### Changed
+- ToC now matches ODK Collect and shows all questions hierarchically.
+
+##### Fixed
+- time/datetime with time between 12:00 and 13:00 not set to PM.
+- time picker in datetime shows empty value if the default value of datetime is at midnight.
+- AM/PM notation broken in time/datetime picker for non-english languages.
+
+[5.7.2] - 2019-09-11
+--------------------
+##### Changed
+- Dependencies (maintenance).
+
+[5.7.1] - 2019-09-09
+--------------------
+##### Changed
+- XPath functions `decimal-time()` and `decimal-date-time()` now use maximum precision instead of rounding to 3 decimals.
+
+##### Fixed
+- Analog scale widget layout messed up in Grid Theme on IE11.
+
+[5.7.0] - 2019-09-05
+--------------------
+##### Added
+- Support for "picker" appearance on range question (100% in enketo-transformer actually)
+
+##### Fixed
+- Datepicker widget cause infinite loops with certain custom extensions that update values programmatically.
+
+[5.6.0] - 2019-08-20
+--------------------
+##### Removed
+- ESRI ArcGIS geopicker (moved [here]https://github.com/enketo/enketo-arcgis-geo-widget)
+
+[5.5.2] - 2019-08-07
+--------------------
+##### Changed
+- Show warning if select_multiple option contains spaces in value.
+- Guidance hints are now displayed on screen as collapsible element.
+
+##### Fixed
+- Likert widget label in Grid Theme overlaps widget in print view.
+
+[5.5.1] - 2019-07-12
+--------------------
+##### Changed
+- Developer documentation update.
+- Major dependencies update.
+
+[5.5.0] - 2019-07-09
+--------------------
+##### Added
+- Support for max-pixel attribute.
+
+##### Changed
+- Improvements to print style (group header size, opacity of disabled questions, line-height in Grid Theme)\
+- Improved print style of select minimal widget.
+
+##### Fixed
+- Long words break out of cell in Grid Theme.
+- Workaround for an iOS browser bug where a readonly date input is actually fully functional.
+
+[5.4.1] - 2019-06-10
+--------------------
+##### Fixed
+- Disabled analog-scale widget is still visible.
+- Tests in enketo-express fail due to npm packaging issue.
+
+[5.4.0] - 2019-06-05
+--------------------
+##### Added
+- An option to override the default XForm language during form instantiation.
+- Developer documentation.
+
+##### Changed
+- Made preparations for apps to dynamically switch the language of non-form-defined strings.
+
+##### Fixed
+- Dependency/build issue with 'sortable not defined'.
+- Form control value getter for complex third-party widgets may get a false value.
+
+[5.3.0] - 2019-05-21
+--------------------
+##### Removed
+- Support for appearances "quick" and "quickcompact".
+
+##### Added
+- Support for appearances "columns", "columns-pack", "columns-n" all with an optional "no-buttons" modifier
+
+##### Fixed
+- Automatically enlarged multiline inputs cannot be manually resized to their original size.
+
+[5.2.8] - 2019-05-10
+--------------------
+##### Fixed
+- Analog scale widget without current value box, still firing excessive change events.
+- Distress widget mercury is not reset properly.
+
+[5.2.7] - 2019-05-09
+--------------------
+##### Fixed
+- Range, Analog Scale, Datetime, and Time widgets fire an unnecessary change event when a new value is set that is equal to the existing value.
+- Range widget fires an unnecessary change event when the value is empty, before the value is set, when the user clicks the widget.
+- Issue with datepickers in Grid Theme in Firefox in apps using Enketo Core (Enketo Express) where the reset button is rendered outside the cell.
+
+[5.2.6] - 2019-05-01
+--------------------
+##### Fixed
+- Draw widgets loose drawing (or last stroke(s) in drawing) on mobile devices if clicking hide-full-screen button or switching device orientation within 1.5 sec after last change.
+
+[5.2.4] - 2019-04-25
+--------------------
+##### Fixed
+- Some forms with repeats fail to load in Safari.
+
+[5.2.3] - 2019-04-24
+--------------------
+##### Fixed
+- Failing to clone repeats that only contain calculations.
+- Select one calculations not updating correctly.
+- Non-relevant calculations inside non-first repeat instances run upon load.
+- Range widgets do not work on touchscreen devices.
+- Date strings without timezone component are not always converted correctly in timezones that have DST.
+- Hand-typed/pasted dates with spaces or invalid characters are kept shown to user, but are not stored in model.
+
+[5.2.2] - 2019-04-01
+--------------------
+##### Changed
+- Hide reset button when question is readonly.
+
+##### Fixed
+- Readonly Draw/Signature widget updates with empty file when canvas looses focus.
+- Readonly Select Minimal widget is not readonly.
+- Readonly File widget becomes writeable if it becomes relevant.
+
+[5.2.1] - 2019-03-26
+--------------------
+##### Changed
+- The restriction on crossing paths in the geoshape widget was removed.
+
+##### Fixed
+- Radiobutton unselect functionality can cause infinite loops with certain custom extensions that update values programmatically.
+
+[5.2.0] - 2019-03-19
+---------------------
+##### Added
+- A configurable option to provide a maximum character length of a text field.
+
 ##### Fixed
 - The output in an itemset option label is not populated upon load.
 
@@ -59,10 +425,10 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 --------------------
 ##### Changed
 - Fewer model updates during drawing using draw/signature/annotate widgets (performance).
-  
+
 ##### Fixed
 - Loading error in Pages mode when a page has no label.
-- Itemsets not populating if inside an irrelevant group upon load.
+- Itemsets not populating if inside an non-relevant group upon load.
 - Download link not working for Draw/Signature/Annotate widgets.
 - Broken autocomplete widget in Safari and all iOS browsers.
 
@@ -78,7 +444,7 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 --------------------
 ##### Removed
 - Deprecated methods.
-- 
+-
 ##### Changed
 - Converted to modern Javascript **WARNING: requires new build systems**
 - Do not include time component for today().
@@ -106,7 +472,7 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 ----------------------
 ##### Fixed
 - If grid form starts with a disabled question, the first question has no top border.
-- If first page in form is irrelevant upon load, it is still shown (in grayscale).
+- If first page in form is non-relevant upon load, it is still shown (in grayscale).
 - Minimal select picker (pulldown) not updating model (regression in 4.60.3).
 
 [4.60.3] - 2018-10-16
@@ -156,7 +522,7 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 ----------------------
 ##### Changed
 - IE11 support is now enabled differently. See [readme.md](https://github.com/enketo/enketo-core#enabling-support-for-internet-explorer-11). **WARNING**
-  
+
 ##### Fixed
 - Calculation results inside repeats are shown incorrectly to user under certain conditions.
 - When a repeat is removed, calculations inside sibling repeats (e.g. using `position(..)`) are not always re-calculated.
@@ -234,7 +600,7 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 ---------------------
 ##### Fixed
 - In a form containing a group with a single child repeat (and no other repeat sibling questions), fails to load a record where that group is empty. When creating the first repeat after load an exception occurs.
-- Output inside a group that is irrelevant upon loading does not get evaluated when the group becomes relevant.
+- Output inside a group that is non-relevant upon loading does not get evaluated when the group becomes relevant.
 
 [4.54.0] - 2018-06-18
 ---------------------
@@ -248,7 +614,7 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 [4.53.0] - 2018-06-15
 ---------------------
 ##### Added
-- Support for ranking widget 
+- Support for ranking widget
 
 [4.52.4] - 2018-06-12
 ---------------------
@@ -265,7 +631,7 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 ---------------------
 ##### Fixed
 - IE11 hack is not focused enough (affecting EE modals).
-- Coordinates around the international dateline (longitude < -180 degrees) are considered invalid in geo widgets. 
+- Coordinates around the international dateline (longitude < -180 degrees) are considered invalid in geo widgets.
 
 [4.52.1] - 2018-06-04
 ---------------------
@@ -298,12 +664,12 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 ---------------------
 ##### Fixed
 - Appearance "horizontal" enlarges the last option if the remainder of the options modulo 3 is 1.
-- If all repeats containing a question that has skip logic are removed, an exception occurs when obtaining the model as string without irrelevant nodes.
+- If all repeats containing a question that has skip logic are removed, an exception occurs when obtaining the model as string without non-relevant nodes.
 
 [4.51.3] - 2018-05-02
 ---------------------
 ##### Fixed
-- When a record is loaded with an empty value for a node that has a default value in the XForm, all secondary instance values are emptied. 
+- When a record is loaded with an empty value for a node that has a default value in the XForm, all secondary instance values are emptied.
 
 [4.51.2] - 2018-05-01
 ---------------------
@@ -330,7 +696,7 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 - Decimal-date-time() not spec-compliant at all.
 - Filepicker and drawing widgets have functional reset button when they are readonly.
 
-[4.50.0] - 2018-04-22 
+[4.50.0] - 2018-04-22
 ----------------------
 ##### Added
 - Basic randomize() support to shuffle nodesets (no support for itemsets with itext labels).
@@ -558,7 +924,7 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 [4.41.9] - 2017-12-20
 ---------------------
 ##### Fixed
-- Npm refuses to install previous version with enketo-xslt 1.15.2, since December 19th 2017 or before. 
+- Npm refuses to install previous version with enketo-xslt 1.15.2, since December 19th 2017 or before.
 
 [4.41.8] - 2017-12-19
 ---------------------
@@ -578,7 +944,7 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 - Grid Theme: A table-list/list-no-label question does not have a bottom border.
 - Grid Theme: Top of page sometimes does not have a border.
 - jr:choice-name() function can not handle syntax with more complex XPaths.
-- Nodenames with dots cause an exception during extraction of a serialized model without irrelevant nodes.
+- Nodenames with dots cause an exception during extraction of a serialized model without non-relevant nodes.
 
 [4.41.6] - 2017-11-29
 ---------------------
@@ -597,7 +963,7 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 ##### Fixed
 - Draw/signature widget not working in pages mode sometimes, if it is not on the first page.
 
-[4.41.4] - 2017-11-16 
+[4.41.4] - 2017-11-16
 ---------------------
 ##### Changed
 - Visually separate repeat instances in Grid Theme.
@@ -665,15 +1031,15 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 [4.39.2] - 2017-09-26
 ----------------------
 ##### Fixed
-- Readonly fields with calculation are not cleared in model when they become irrelevant if clearIrrelevantImmediately is set to `true`.
-- Calculated items without form control were calculated even if they were inside an irrelevant group.
+- Readonly fields with calculation are not cleared in model when they become non-relevant if clearIrrelevantImmediately is set to `true`.
+- Calculated items without form control were calculated even if they were inside an non-relevant group.
 - Radiobuttons inside a repeat are sometimes incorrectly removed from the submission.
 
 [4.39.1] - 2017-09-13
 ----------------------
 ##### Fixed
-- Form loading error with new decimal input mask. 
- 
+- Form loading error with new decimal input mask.
+
 [4.39.0] - 2017-09-06
 ----------------------
 ##### Added
@@ -686,12 +1052,12 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 [4.38.2] - 2017-08-17
 ----------------------
 ##### Fixed
-- In some occasions, nested repeat nodes that are relevant are removed from the record string as if they were irrelevant.
+- In some occasions, nested repeat nodes that are relevant are removed from the record string as if they were non-relevant.
 - In tables, the heading row (appearance=label) can be misaligned with the lower rows.
 - Cloned select minimal question with relevant inside repeat is hidden when loading record with multiple repeats.
 - Draw/signature widget is instantiated for file input types other than "image".
 - Draw/signature widget is never enabled if it has a relevant expression.
-- File inputs do not always clear properly when they become irrelevant.
+- File inputs do not always clear properly when they become non-relevant.
 
 [4.38.1] - 2017-08-10
 ---------------------
@@ -709,8 +1075,8 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 [4.37.0] - 2017-07-25
 ---------------------
 ##### Added
-- Ability to hide irrelevant questions from printout (now the default) with a setting.
- 
+- Ability to hide non-relevant questions from printout (now the default) with a setting.
+
 ##### Changed
 - Touchscreen detection to change widgets and appearance has been tweaked and is now only considering iOS and Android browsers.
 - Native date inputs (touchscreen or readonly) do not show 'yyyy-mm-dd' placeholder text anymore when empty and unfocused,
@@ -727,7 +1093,7 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 ---------------------
 ##### Fixed
 - Emergency temporary workaround for checked state of checkbox in Firefox.
-- Error message when removing irrelevant nodes because the node cannot be found.
+- Error message when removing non-relevant nodes because the node cannot be found.
 
 [4.36.0] - 2017-07-03
 ---------------------
@@ -814,7 +1180,7 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 [4.31.4] - 2017-05-03
 ---------------------
 ##### Fixed
-- Exception occurs when obtaining cleaned-of-irrelevants model string if repeat has a relevant and a repeat-count of 0.
+- Exception occurs when obtaining cleaned-of-non-relevants model string if repeat has a relevant and a repeat-count of 0.
 
 [4.31.3] - 2017-05-01
 ---------------------
@@ -882,10 +1248,10 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 [4.28.0] - 2017-03-30
 ---------------------
 ##### Added
-- Method to obtain primary instance without irrelevant nodes.
+- Method to obtain primary instance without non-relevant nodes.
 
 ##### Fixed
-- In pages mode, if page (group) is relevant but only includes irrelevant questions, it is displayed as an empty page.
+- In pages mode, if page (group) is relevant but only includes non-relevant questions, it is displayed as an empty page.
 - Inputupdate.enketo event fires even if value hasn't changed.
 
 [4.27.2] - 2017-03-23
@@ -901,7 +1267,7 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ##### Fixed
 - ArcGIS geopicker fails to initialize inside a repeat.
-- Value not cleared from widget UI when it becomes irrelevant and clearIrrelevantImmediately is set to `true`.
+- Value not cleared from widget UI when it becomes non-relevant and clearIrrelevantImmediately is set to `true`.
 
 [4.27.0] - 2017-03-20
 ---------------------
@@ -960,7 +1326,7 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 ##### Added
 - Autocomplete widget for all browser except: Safari and all browsers on iOS.
 
-[4.22.2] - 2017-02-23 
+[4.22.2] - 2017-02-23
 ---------------------
 ##### Fixed
 - jr:choice-name() inside a repeat produces incorrect results.
@@ -1017,14 +1383,14 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 [4.17.1] - 2016-12-22
 ---------------------
-##### Fixed 
+##### Fixed
 - Enketo transformer version in getRequiredTransformerVersion not up to date.
 
 [4.17.0] - 2016-12-22
 ---------------------
 ##### Added
 - Static method to obtain required enketo-transformer version (Form.getRequiredTransformerVersion).
-- Option to let engine keep irrelevant values until new function `clearIrrelevant` is called.
+- Option to let engine keep non-relevant values until new function `clearIrrelevant` is called.
 
 ##### Fixed
 - Various issues with grunt that made it harder to start developing on enketo-core.
@@ -1148,7 +1514,7 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 - Upgraded to jQuery 3.1.x. **Warning: Likely requires the app that uses enketo-core to also upgrade to jQuery 3.1.x!**
 
 ##### Fixed
-- Widgets not disabled when they become irrelevant.
+- Widgets not disabled when they become non-relevant.
 
 [4.9.3] - 2016-09-29
 --------------------
@@ -1446,7 +1812,7 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ##### Changed
 - Analog scale picker reset button disabled when value is empty.
-- Analog scale picker reset button hidden when disabled. 
+- Analog scale picker reset button hidden when disabled.
 - Analog scale picker handle hidden when value is empty.
 
 ##### Fixed
@@ -1486,7 +1852,7 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 ##### Fixed
 - Output loading error if external instance is referenced in XPath but does not exist in the model.
 
-[4.0.2] - 2015-09-04 
+[4.0.2] - 2015-09-04
 --------------------
 ##### Added
 - Facilitate easy XPath evaluator override.
@@ -1528,7 +1894,7 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 ##### Fixed
 - Repeat button location in Grid theme.
 - Radio buttons inside cloned repeat, require 2 clicks if the master was selected.
-- Radio button and checkbox default values not populated correctly in cloned repeat. Overriding values in first repeat. 
+- Radio button and checkbox default values not populated correctly in cloned repeat. Overriding values in first repeat.
 - Indexed-repeat() result incorrect if expression is inside 2+ repeat.
 - Webform not responsive when used in full-size iframe.
 
@@ -1546,7 +1912,7 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 - Language options in form language selector oddly aligned when mix of rtl and ltr languages is used (FF).
 - Title directionality is not displayed according to script used in Grid theme.
 
-[3.8.0] - 2015-07-28 
+[3.8.0] - 2015-07-28
 ------------------------
 ##### Added
 - Appearance "compact-n" support for media grid pickers.
@@ -1581,12 +1947,12 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 ##### Fixed
 - A note preceding a traditional table is formatted as a group label.
 
-[3.5.13] - 2015-06-18 
+[3.5.13] - 2015-06-18
 ------------------------
 ##### Fixed
 - Groups and repeats missing from print view in pages mode.
 - Sidebar handle is shown up in print view.
-- Back button in pages shows merged pages after form reset. 
+- Back button in pages shows merged pages after form reset.
 - First page in pages mode is shown if it is disabled.
 
 [3.5.12] - 2015-06-16
@@ -1608,7 +1974,7 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ##### Fixed
 - Indexed-repeat() position(..) parameter and nested expressions caused function to fail.
-- Irrelevant questions inside a repeat clone are shown but should be hidden.
+- Non-relevant questions inside a repeat clone are shown but should be hidden.
 - Calculations inside repeat clones are not evaluated upon form load
 
 [3.5.9] - 2015-05-22
@@ -1621,7 +1987,7 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 [3.5.8] - 2015-05-04
 -------------------------
-##### Added 
+##### Added
 - Enable print script for themes based on Grid Theme that include "grid" in the theme name.
 
 ##### Changed
@@ -1650,12 +2016,12 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 -----------------
 ##### Changed
 - Branch update performance
-- Calculate update performance 
+- Calculate update performance
 - Widget loading performance
 
 ##### Fixed
 - Top border missing and margin too small when a visible note is preceded by a hidden note.
-- Any branch containing a geoshape widget caused an exception to occur when it was made irrelevant.
+- Any branch containing a geoshape widget caused an exception to occur when it was made non-relevant.
 - Appearance 'horizontal' no longer displays with evenly-spaced columns.
 - Some buttons in Safari have border and background when they shouldn't have.
 - Side bar in Safari is not stretching to bottom.
@@ -1732,7 +2098,7 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 [3.3.2] - 2015-01-23
 ---------
 ##### Added
-- Ability to extract instanceName from model 
+- Ability to extract instanceName from model
 
 
 [3.3.1] - 2015-01-06

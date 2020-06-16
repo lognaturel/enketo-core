@@ -7,12 +7,21 @@ import events from '../../js/event';
 import './timepicker';
 import '../../js/dropdown.jquery';
 
+/**
+ * @augments Widget
+ */
 class TimepickerExtended extends Widget {
-
+    /**
+     * @type {string}
+     * @return {string} The selector the widget should activated on.
+     */
     static get selector() {
         return '.question input[type="time"]:not([readonly])';
     }
 
+    /**
+     * @return {boolean} Whether additional condition to instantiate the widget is met.
+     */
     static condition() {
         return !support.touch || !support.inputTypes.time;
     }
@@ -54,9 +63,11 @@ class TimepickerExtended extends Widget {
         this.element.addEventListener( events.ApplyFocus().type, () => {
             this.fakeTimeI.focus();
         } );
-
     }
 
+    /**
+     * Resets widget
+     */
     _reset() {
         const ev = this.originalInputValue ? events.Change() : null;
         if ( ev || this.value ) {
@@ -66,13 +77,21 @@ class TimepickerExtended extends Widget {
         }
     }
 
+    /**
+     * Updates widget
+     */
     update() {
-        $( this.element )
-            .next( '.widget' )
-            .find( 'input' )
-            .timepicker( 'setTime', this.element.value );
+        if ( this.element.value !== this.value ) {
+            $( this.element )
+                .next( '.widget' )
+                .find( 'input' )
+                .timepicker( 'setTime', this.element.value );
+        }
     }
 
+    /**
+     * @type {string}
+     */
     get value() {
         return this.fakeTimeI.value;
     }

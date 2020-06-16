@@ -1,7 +1,7 @@
 import MergeXML from 'mergexml/mergexml';
 import { readCookie, parseFunctionFromExpression, stripQuotes } from './utils';
 import $ from 'jquery';
-import { getSiblingElementsAndSelf } from './dom-utils';
+import { getSiblingElementsAndSelf, getXPath, getRepeatIndex, hasPreviousCommentSiblingWithContent, hasPreviousSiblingElementSameName } from './dom-utils';
 import FormLogicError from './form-logic-error';
 import config from 'enketo/config';
 import types from './types';
@@ -12,6 +12,7 @@ const OPENROSA = /(decimal-date-time\(|pow\(|indexed-repeat\(|format-date\(|coal
 const OPENROSA_XFORMS_NS = 'http://openrosa.org/xforms';
 const JAVAROSA_XFORMS_NS = 'http://openrosa.org/javarosa';
 const ENKETO_XFORMS_NS = 'http://enketo.org/xforms';
+const ODK_XFORMS_NS = 'http://www.opendatakit.org/xforms';
 
 //require( './plugins' );
 import './extend';
@@ -23,13 +24,10 @@ let Nodeset;
 /**
  * Class dealing with the XML Model of a form
  *
- * @constructor
- * @param {{modelStr: string, ?instanceStr: string, ?external: <{id: string, xml: xmlDocument }>, ?submitted: boolean }} data:
- *                            data object containing XML model, 
- *                            (partial) XML instance to load, 
- *                            external data array
- *                            flag to indicate whether data was submitted before
- * @param {?{?full:boolean}} options Whether to initialize the full model or only the primary instance
+ * @class
+ * @param {FormDataObj} data - data object
+ * @param {object=} options - FormModel options
+ * @param {string=} options.full - Whether to initialize the full model or only the primary instance.
  */
 FormModel = function( data, options ) {
 
@@ -56,32 +54,28 @@ FormModel = function( data, options ) {
 
 /**
  * Getter and setter functions
- * @type {Object}
  */
 FormModel.prototype = {
+    /**
+     * @type {string}
+     */
     get version() {
         return this.evaluate( '/node()/@version', 'string', null, null, true );
     },
     /**
-     * Gets the instance ID
-     *
-     * @return {string} instanceID
+     * @type {string}
      */
     get instanceID() {
         return this.getMetaNode( 'instanceID' ).getVal();
     },
     /**
-     * Gets the deprecated ID
-     *
-     * @return {string} deprecatedID
+     * @type {string}
      */
     get deprecatedID() {
         return this.getMetaNode( 'deprecatedID' ).getVal() || '';
     },
     /**
-     * Gets the instance Name
-     *
-     * @return {string} instanceID
+     * @type {string}
      */
     get instanceName() {
         return this.getMetaNode( 'instanceName' ).getVal();
@@ -90,6 +84,8 @@ FormModel.prototype = {
 
 /**
  * Initializes FormModel
+ *
+ * @return {Array<string>} list of initialization errors
  */
 FormModel.prototype.init = function() {
     let id;
@@ -115,10 +111,11 @@ FormModel.prototype.init = function() {
     // Create the model
     try {
         id = 'model';
-        // the default model
+        // The default model
         this.xml = parser.parseFromString( this.data.modelStr, 'text/xml' );
         this.throwParserErrors( this.xml, this.data.modelStr );
-        // add external data to model 
+
+        // Add external data to model
         this.data.external.forEach( instance => {
             id = `instance "${instance.id}"` || 'instance unknown';
             instanceDoc = that.getSecondaryInstance( instance.id );
@@ -128,8 +125,9 @@ FormModel.prototype.init = function() {
                 instanceDoc.removeChild( secondaryInstanceChildren[ i ] );
             }
             let rootEl;
-            // instanceof Document is only supported for Enketo Validate. It is not meant to be used otherwise as it could create problems.
-            if ( instance.xml instanceof XMLDocument || instance.xml instanceof Document ) {
+            // The instance.xml.constructor.name === 'Document' check is only supported for Enketo Validate.
+            // Document instances are not supposed to be used otherwise as it could create problems.
+            if ( instance.xml instanceof XMLDocument || instance.xml.constructor.name === 'Document' ) {
                 if ( window.navigator.userAgent.indexOf( 'Trident/' ) >= 0 ) {
                     // IE does not support importNode
                     rootEl = that.importNode( instance.xml.documentElement, true );
@@ -143,7 +141,7 @@ FormModel.prototype.init = function() {
             }
         } );
 
-        // TODO: in the future, we should search for jr://instance/session and 
+        // TODO: in the future, we should search for jr://instance/session and
         // populate that one. This is just moving in that direction to implement preloads.
         this.createSession( '__session', this.data.session );
     } catch ( e ) {
@@ -157,6 +155,13 @@ FormModel.prototype.init = function() {
             this.hasInstance = !!this.xml.querySelector( 'model > instance' );
             this.rootElement = this.xml.querySelector( 'instance > *' ) || this.xml.documentElement;
             this.setNamespaces();
+
+            // Determine whether it is possible that this form uses incorrect absolute/path/to/repeat/node syntax when
+            // it actually was supposed to use a relative ../node path (old issue with older pyxform-generated forms).
+            // In the future, if there are more use cases for odk:xforms-version, we'll probably have to use a semver-parser
+            // to do a comparison. In this case, the presence of the attribute is sufficient, as we know no older versions
+            // than odk:xforms-version="1.0.0" exist. Previous versions had no number.
+            this.noRepeatRefErrorExpected = this.evaluate( '/model/@odk:xforms-version', 'boolean', null, null, true );
 
             // Check if instanceID is present
             if ( !this.getMetaNode( 'instanceID' ).getElement() ) {
@@ -179,6 +184,9 @@ FormModel.prototype.init = function() {
             id = 'record';
             if ( this.data.instanceStr ) {
                 this.mergeXml( this.data.instanceStr );
+            } else {
+                // Only dispatch for newly created records
+                this.events.dispatchEvent( event.InstanceFirstLoad() );
             }
             // Set the two most important meta fields before any field 'dataupdate' event fires.
             this.setInstanceIdAndDeprecatedId();
@@ -191,12 +199,20 @@ FormModel.prototype.init = function() {
     return this.loadErrors;
 };
 
+/**
+ * @param {Document} xmlDoc - XML Document
+ * @param {string} xmlStr - XML string
+ */
 FormModel.prototype.throwParserErrors = ( xmlDoc, xmlStr ) => {
     if ( !xmlDoc || xmlDoc.querySelector( 'parsererror' ) ) {
         throw new Error( `Invalid XML: ${xmlStr}` );
     }
 };
 
+/**
+ * @param {string} id - Instance ID
+ * @param {object} [sessObj] - session object
+ */
 FormModel.prototype.createSession = function( id, sessObj ) {
     let instance;
     let session;
@@ -231,17 +247,18 @@ FormModel.prototype.createSession = function( id, sessObj ) {
 /**
  * For some unknown reason we cannot use doc.getElementById(id) or doc.querySelector('#'+id)
  * in IE11. This function is a replacement for this specifically to find a secondary instance.
- * 
- * @param  {string} id [description]
- * @return {Element}    [description]
+ *
+ * @param  {string} id - DOM element id.
+ * @return {Element|undefined} secondary instance XML element
  */
 FormModel.prototype.getSecondaryInstance = function( id ) {
     let instanceEl;
 
-    [].slice.call( this.xml.querySelectorAll( 'model > instance' ) ).some( el => {
+    [ ...this.xml.querySelectorAll( 'model > instance' ) ].some( el => {
         const idAttr = el.getAttribute( 'id' );
         if ( idAttr === id ) {
             instanceEl = el;
+
             return true;
         } else {
             return false;
@@ -254,12 +271,10 @@ FormModel.prototype.getSecondaryInstance = function( id ) {
 /**
  * Returns a new Nodeset instance
  *
- * @param {(string|null)=} selector - [type/description]
- * @param {(string|number|null)=} index    - [type/description]
- * @param {(Object|null)=} filter   - [type/description]
- * @param filter.onlyLeaf
- * @param filter.noEmpty
- * @return {Nodeset}
+ * @param {string|null} [selector] - simple path to node
+ * @param {string|number|null} [index] - index of node
+ * @param {NodesetFilter|null} [filter] - filter to apply
+ * @return {Nodeset} Nodeset instance
  */
 FormModel.prototype.node = function( selector, index, filter ) {
     return new Nodeset( selector, index, filter, this );
@@ -268,34 +283,37 @@ FormModel.prototype.node = function( selector, index, filter ) {
 /**
  * Alternative adoptNode on IE11 (http://stackoverflow.com/questions/1811116/ie-support-for-dom-importnode)
  * TODO: remove to be replaced by separate IE11-only polyfill file/service
+ *
+ * @param {Element} node - Node to be imported
+ * @param {Array<Node>} allChildren - All children of imported Node
  */
 FormModel.prototype.importNode = function( node, allChildren ) {
     let i;
     let il;
     switch ( node.nodeType ) {
-        case document.ELEMENT_NODE:
-            {
-                const newNode = document.createElementNS( node.namespaceURI, node.nodeName );
-                if ( node.attributes && node.attributes.length > 0 ) {
-                    for ( i = 0, il = node.attributes.length; i < il; i++ ) {
-                        const attr = node.attributes[ i ];
-                        if ( attr.namespaceURI ) {
-                            newNode.setAttributeNS( attr.namespaceURI, attr.nodeName, node.getAttributeNS( attr.namespaceURI, attr.localName ) );
-                        } else {
-                            newNode.setAttribute( attr.nodeName, node.getAttribute( attr.nodeName ) );
-                        }
+        case document.ELEMENT_NODE: {
+            const newNode = document.createElementNS( node.namespaceURI, node.nodeName );
+            if ( node.attributes && node.attributes.length > 0 ) {
+                for ( i = 0, il = node.attributes.length; i < il; i++ ) {
+                    const attr = node.attributes[ i ];
+                    if ( attr.namespaceURI ) {
+                        newNode.setAttributeNS( attr.namespaceURI, attr.nodeName, node.getAttributeNS( attr.namespaceURI, attr.localName ) );
+                    } else {
+                        newNode.setAttribute( attr.nodeName, node.getAttribute( attr.nodeName ) );
                     }
                 }
-                if ( allChildren && node.children.length ) {
-                    for ( i = 0, il = node.children.length; i < il; i++ ) {
-                        newNode.appendChild( this.importNode( node.children[ i ], allChildren ) );
-                    }
-                }
-                if ( !node.children.length && node.textContent ) {
-                    newNode.textContent = node.textContent;
-                }
-                return newNode;
             }
+            if ( allChildren && node.children.length ) {
+                for ( i = 0, il = node.children.length; i < il; i++ ) {
+                    newNode.appendChild( this.importNode( node.children[ i ], allChildren ) );
+                }
+            }
+            if ( !node.children.length && node.textContent ) {
+                newNode.textContent = node.textContent;
+            }
+
+            return newNode;
+        }
         case document.TEXT_NODE:
         case document.CDATA_SECTION_NODE:
         case document.COMMENT_NODE:
@@ -305,8 +323,7 @@ FormModel.prototype.importNode = function( node, allChildren ) {
 /**
  * Merges an XML instance string into the XML Model
  *
- * @param  {string} recordStr The XML record as string
- * @param  {string} modelDoc  The XML model to merge the record into
+ * @param {string} recordStr - The XML record as string
  */
 FormModel.prototype.mergeXml = function( recordStr ) {
     let modelInstanceChildStr;
@@ -329,13 +346,13 @@ FormModel.prototype.mergeXml = function( recordStr ) {
         throw new Error( 'Model is corrupt. It does not contain a childnode of instance' );
     }
 
-    /** 
+    /**
      * A Namespace merge problem occurs when ODK decides to invent a new namespace for a submission
      * that is different from the XForm model namespace... So we just remove this nonsense.
      */
     recordStr = recordStr.replace( /\s(xmlns=("|')[^\s>]+("|'))/g, '' );
     /**
-     * Comments aren't merging in document order (which would be impossible also). 
+     * Comments aren't merging in document order (which would be impossible also).
      * This may mess up repeat functionality, so until we actually need
      * comments, we simply remove them (multiline comments are probably not removed, but we don't care about them).
      */
@@ -344,12 +361,12 @@ FormModel.prototype.mergeXml = function( recordStr ) {
 
     /**
      * Normally records will not contain the special "jr:template" attribute. However, we should still be able to deal with
-     * this if they do, including the old hacked non-namespaced "template" attribute. 
+     * this if they do, including the old hacked non-namespaced "template" attribute.
      * https://github.com/enketo/enketo-core/issues/376
-     * 
+     *
      * The solution if these are found is to delete the node.
-     * 
-     * Since the record is not a FormModel instance we revert to a very aggressive querySelectorAll that selects all 
+     *
+     * Since the record is not a FormModel instance we revert to a very aggressive querySelectorAll that selects all
      * nodes with a template attribute name IN ANY NAMESPACE.
      */
 
@@ -362,9 +379,9 @@ FormModel.prototype.mergeXml = function( recordStr ) {
     /**
      * To comply with quirky behaviour of repeats in XForms, we manually create the correct number of repeat instances
      * before merging. This resolves these two issues:
-     *  a) Multiple repeat instances in record are added out of order when merged into a record that contains fewer 
+     *  a) Multiple repeat instances in record are added out of order when merged into a record that contains fewer
      *     repeat instances, see https://github.com/kobotoolbox/enketo-express/issues/223
-     *  b) If a repeat node is missing from a repeat instance (e.g. the 2nd) in a record, and that repeat instance is not 
+     *  b) If a repeat node is missing from a repeat instance (e.g. the 2nd) in a record, and that repeat instance is not
      *     in the model, that node will be missing in the result.
      */
     // TODO: ES6 for (var node of record.querySelectorAll('*')){}
@@ -375,11 +392,11 @@ FormModel.prototype.mergeXml = function( recordStr ) {
             let positionedPath;
             let repeatParts;
             try {
-                path = that.getXPath( node, 'instance', false );
+                path = getXPath( node, 'instance', false );
                 // If this is a templated repeat (check templates)
                 // or a repeat without templates
-                if ( typeof that.templates[ path ] !== 'undefined' || that.getRepeatIndex( node ) > 0 ) {
-                    positionedPath = that.getXPath( node, 'instance', true );
+                if ( typeof that.templates[ path ] !== 'undefined' || getRepeatIndex( node ) > 0 ) {
+                    positionedPath = getXPath( node, 'instance', true );
                     if ( !that.evaluate( positionedPath, 'node', null, null, true ) ) {
                         repeatParts = positionedPath.match( /([^[]+)\[(\d+)\]\//g );
                         // If the positionedPath has a non-0 repeat index followed by (at least) 1 node, avoid cloning out of order.
@@ -392,11 +409,11 @@ FormModel.prototype.mergeXml = function( recordStr ) {
                     }
                 }
             } catch ( e ) {
-                console.log( 'Ignored error:', e );
+                console.warn( 'Ignored error:', e );
             }
         } );
 
-    /** 
+    /**
      * Any default values in the model, may have been emptied in the record.
      * MergeXML will keep those default values, which would be bad, so we manually clear defaults before merging.
      */
@@ -404,10 +421,11 @@ FormModel.prototype.mergeXml = function( recordStr ) {
     Array.prototype.slice.call( record.querySelectorAll( '*' ) )
         .filter( recordNode => {
             const val = recordNode.textContent;
+
             return recordNode.children.length === 0 && val.trim().length === 0;
         } )
         .forEach( leafNode => {
-            const path = that.getXPath( leafNode, 'instance', true );
+            const path = getXPath( leafNode, 'instance', true );
             const instanceNode = that.node( path, 0 ).getElement();
             if ( instanceNode ) {
                 // TODO: after dropping support for IE11, we can also use instanceNode.children.length
@@ -443,12 +461,12 @@ FormModel.prototype.mergeXml = function( recordStr ) {
     }
 
     /**
-     * Beware: merge.Get(0) returns an ActiveXObject in IE11. We turn this 
+     * Beware: merge.Get(0) returns an ActiveXObject in IE11. We turn this
      * into a proper XML document by parsing the XML string instead.
      */
     mergeResultDoc = parser.parseFromString( merger.Get( 1 ), 'text/xml' );
 
-    /** 
+    /**
      * To properly show 0 repeats, if the form definition contains multiple default instances
      * and the record contains none, we have to iterate trough the templates object, and
      * 1. check for each template path, whether the record contained more than 0 of these nodes
@@ -476,73 +494,7 @@ FormModel.prototype.mergeXml = function( recordStr ) {
 };
 
 /**
- * Creates an XPath from a node
- * @param { XMLElement} node XML node
- * @param  {string=} rootNodeName   if absent the root is #document
- * @param  {boolean=} includePosition whether or not to include the positions /path/to/repeat[2]/node
- * @return {string}                 XPath
- */
-FormModel.prototype.getXPath = function( node, rootNodeName, includePosition ) {
-    let index;
-    const steps = [];
-    let position = '';
-    if ( !node || node.nodeType !== 1 ) {
-        return null;
-    }
-    const nodeName = node.nodeName;
-    let parent = node.parentElement;
-    let parentName = parent ? parent.nodeName : null;
-
-    rootNodeName = rootNodeName || '#document';
-    includePosition = includePosition || false;
-
-    if ( includePosition ) {
-        index = this.getRepeatIndex( node );
-        if ( index > 0 ) {
-            position = `[${index + 1}]`;
-        }
-    }
-
-    steps.push( nodeName + position );
-
-    while ( parent && parentName !== rootNodeName && parentName !== '#document' ) {
-        if ( includePosition ) {
-            index = this.getRepeatIndex( parent );
-            position = ( index > 0 ) ? `[${index + 1}]` : '';
-        }
-        steps.push( parentName + position );
-        parent = parent.parentElement;
-        parentName = parent ? parent.nodeName : null;
-    }
-
-    return `/${steps.reverse().join( '/' )}`;
-};
-
-/** 
- * Obtains the index of a repeat instance within its own series.
- * 
- * @param  {[type]} node [description]
- * @return {[type]}      [description]
- */
-FormModel.prototype.getRepeatIndex = node => {
-    let index = 0;
-    const nodeName = node.nodeName;
-    let prevSibling = node.previousSibling;
-
-    while ( prevSibling ) {
-        // ignore any sibling text and comment nodes (e.g. whitespace with a newline character)
-        if ( prevSibling.nodeName && prevSibling.nodeName === nodeName ) {
-            index++;
-        }
-        prevSibling = prevSibling.previousSibling;
-    }
-
-    return index;
-};
-
-/**
- * Trims values
- * 
+ * Trims values of all Form elements
  */
 FormModel.prototype.trimValues = function() {
     this.node( null, null, {
@@ -553,8 +505,7 @@ FormModel.prototype.trimValues = function() {
 };
 
 /**
- * [deprecateId description]
- * @return {[type]} [description]
+ * Sets instance ID and deprecated ID
  */
 FormModel.prototype.setInstanceIdAndDeprecatedId = function() {
     let instanceIdObj;
@@ -566,6 +517,12 @@ FormModel.prototype.setInstanceIdAndDeprecatedId = function() {
     instanceIdObj = this.getMetaNode( 'instanceID' );
     instanceIdEl = instanceIdObj.getElement();
     instanceIdExistingVal = instanceIdObj.getVal();
+
+    if ( !instanceIdEl ){
+        console.warn( 'Model has no instanceID element' );
+
+        return;
+    }
 
     if ( this.data.instanceStr && this.data.submitted ) {
         deprecatedIdEl = this.getMetaNode( 'deprecatedID' ).getElement();
@@ -593,14 +550,19 @@ FormModel.prototype.setInstanceIdAndDeprecatedId = function() {
     }
 };
 
+import bindJsEvaluator from './xpath-evaluator-binding';
 /**
  * Creates a custom XPath Evaluator to be used for XPath Expresssions that contain custom
  * OpenRosa functions or for browsers that do not have a native evaluator.
+ *
+ * @type {Function}
  */
-import bindJsEvaluator from './xpath-evaluator-binding';
-
 FormModel.prototype.bindJsEvaluator = bindJsEvaluator;
 
+/**
+ * @param {string} localName - node name without namespace
+ * @return {Element} node
+ */
 FormModel.prototype.getMetaNode = function( localName ) {
     const orPrefix = this.getNamespacePrefix( OPENROSA_XFORMS_NS );
     let n = this.node( `/*/${orPrefix}:meta/${orPrefix}:${localName}` );
@@ -612,15 +574,29 @@ FormModel.prototype.getMetaNode = function( localName ) {
     return n;
 };
 
+/**
+ * @param {string} path - path to repeat
+ * @return {string} repeat comment text
+ */
 FormModel.prototype.getRepeatCommentText = path => {
     path = path.trim();
+
     return REPEAT_COMMENT_PREFIX + path;
 };
 
+/**
+ * @param {string} repeatPath - path to repeat
+ * @return {string} selector
+ */
 FormModel.prototype.getRepeatCommentSelector = function( repeatPath ) {
     return `//comment()[self::comment()="${this.getRepeatCommentText( repeatPath )}"]`;
 };
 
+/**
+ * @param {string} repeatPath - path to repeat
+ * @param {number} repeatSeriesIndex - index of repeat series
+ * @return {Element} node
+ */
 FormModel.prototype.getRepeatCommentEl = function( repeatPath, repeatSeriesIndex ) {
     return this.evaluate( this.getRepeatCommentSelector( repeatPath ), 'nodes', null, null, true )[ repeatSeriesIndex ];
 };
@@ -628,9 +604,9 @@ FormModel.prototype.getRepeatCommentEl = function( repeatPath, repeatSeriesIndex
 /**
  * Adds a <repeat>able instance node in a particular series of a repeat.
  *
- * @param  {string} repeatPath absolute path of a repeat 
- * @param  {number} repeatSeriesIndex    index of the repeat series that gets a new repeat (this is always 0 for non-nested repeats)
- * @param  {boolean} merge   whether this operation is part of a merge operation (won't send dataupdate event, clears all values and 
+ * @param  {string} repeatPath - absolute path of a repeat
+ * @param  {number} repeatSeriesIndex - index of the repeat series that gets a new repeat (this is always 0 for non-nested repeats)
+ * @param  {boolean} merge - whether this operation is part of a merge operation (won't send dataupdate event, clears all values and
  *                           will not add ordinal attributes as these should be provided in the record)
  */
 FormModel.prototype.addRepeat = function( repeatPath, repeatSeriesIndex, merge ) {
@@ -655,14 +631,14 @@ FormModel.prototype.addRepeat = function( repeatPath, repeatSeriesIndex, merge )
     }
 
     /**
-     * If templatenodes and insertAfterNode(s) have been identified 
+     * If templatenodes and insertAfterNode(s) have been identified
      */
     if ( template && insertAfterNode ) {
         templateClone = template.cloneNode( true );
         insertAfterNode.after( templateClone );
 
         this.removeOrdinalAttributes( templateClone );
-        // We should not automatically add ordinal attributes for an existing record as the ordinal values cannot be determined. 
+        // We should not automatically add ordinal attributes for an existing record as the ordinal values cannot be determined.
         // They should be provided in the instanceStr (record).
         if ( !merge ) {
             this.addOrdinalAttribute( templateClone, repeatSeries[ 0 ] );
@@ -681,6 +657,10 @@ FormModel.prototype.addRepeat = function( repeatPath, repeatSeriesIndex, merge )
     }
 };
 
+/**
+ * @param {Element} repeat - Set ordinal attribue to this node
+ * @param {Element} firstRepeatInSeries - Used to know what the next ordinal attribute value should be. Defaults to `repeat` node.
+ */
 FormModel.prototype.addOrdinalAttribute = function( repeat, firstRepeatInSeries ) {
     let lastUsedOrdinal;
     let newOrdinal;
@@ -697,6 +677,11 @@ FormModel.prototype.addOrdinalAttribute = function( repeat, firstRepeatInSeries 
     }
 };
 
+/**
+ * Removes all ordinal attriubetes from all applicable nodes
+ *
+ * @param {Element} el - Target node
+ */
 FormModel.prototype.removeOrdinalAttributes = el => {
     if ( config.repeatOrdinals === true ) {
         // Find all nested repeats first (this is only used for repeats that have no template).
@@ -713,10 +698,10 @@ FormModel.prototype.removeOrdinalAttributes = el => {
 
 /**
  * Obtains a single series of repeat element;
- * 
- * @param  {string} repeatPath        The absolute path of the repeat.
- * @param  {number} repeatSeriesIndex The index of the series of that repeat.
- * @return {<Element>}                Array of all repeat elements in a series.
+ *
+ * @param {string} repeatPath - The absolute path of the repeat.
+ * @param {number} repeatSeriesIndex - The index of the series of that repeat.
+ * @return {Array<Element>} Array of all repeat elements in a series.
  */
 FormModel.prototype.getRepeatSeries = function( repeatPath, repeatSeriesIndex ) {
     let pathSegments;
@@ -746,68 +731,36 @@ FormModel.prototype.getRepeatSeries = function( repeatPath, repeatSeriesIndex ) 
     return result;
 };
 
-FormModel.prototype.hasPreviousSiblingElementSameName = el => {
-    let found = false;
-    const nodeName = el.nodeName;
-    el = el.previousSibling;
-
-    while ( el ) {
-        // Ignore any sibling text and comment nodes (e.g. whitespace with a newline character)
-        // also deal with repeats that have non-repeat siblings in between them, event though that would be a bug.
-        if ( el.nodeName && el.nodeName === nodeName ) {
-            found = true;
-            break;
-        }
-        el = el.previousSibling;
-    }
-    return found;
-};
-
-FormModel.prototype.hasPreviousCommentSiblingWithContent = ( node, content ) => {
-    let found = false;
-    node = node.previousSibling;
-
-    while ( node ) {
-        if ( node.nodeType === Node.COMMENT_NODE && node.textContent === content ) {
-            found = true;
-            break;
-        }
-        node = node.previousSibling;
-    }
-    return found;
-};
-
 /**
  * Determines the index of a repeated node amongst all nodes with the same XPath selector
  *
- * @param  {Element} element element
- * @return {number}       [description]
+ * @param {Element} element - Target node
+ * @return {number} Determined index
  */
 FormModel.prototype.determineIndex = function( element ) {
-    const that = this;
-
     if ( element ) {
         const nodeName = element.nodeName;
-        const path = this.getXPath( element, 'instance' );
+        const path = getXPath( element, 'instance' );
         const family = Array.prototype.slice.call( this.xml.querySelectorAll( nodeName.replace( /\./g, '\\.' ) ) )
-            .filter( node => path === that.getXPath( node, 'instance' ) );
+            .filter( node => path === getXPath( node, 'instance' ) );
+
         return family.length === 1 ? null : family.indexOf( element );
     } else {
         console.error( 'no node, or multiple nodes, provided to determineIndex function' );
+
         return -1;
     }
 };
 
 /**
- * Extracts all templates from the model and stores them in a Javascript object poperties as Jquery collections
- * @return {[type]} [description]
+ * Extracts all templates from the model and stores them in a Javascript object poperties as Jquery collections.
  */
 FormModel.prototype.extractTemplates = function() {
     const that = this;
 
     // in reverse document order to properly deal with nested repeat templates
     this.getTemplateNodes().reverse().forEach( templateEl => {
-        const xPath = that.getXPath( templateEl, 'instance' );
+        const xPath = getXPath( templateEl, 'instance' );
         that.addTemplate( xPath, templateEl );
         /*
          * Nested repeats that have a template attribute are correctly add to that.templates.
@@ -818,6 +771,9 @@ FormModel.prototype.extractTemplates = function() {
     } );
 };
 
+/**
+ * @param {Array<string>} repeatPaths - repeat paths
+ */
 FormModel.prototype.extractFakeTemplates = function( repeatPaths ) {
     const that = this;
     let repeat;
@@ -832,18 +788,26 @@ FormModel.prototype.extractFakeTemplates = function( repeatPaths ) {
     } );
 };
 
+/**
+ * @param {string} repeatPath - path to repeat
+ */
 FormModel.prototype.addRepeatComments = function( repeatPath ) {
     const comment = this.getRepeatCommentText( repeatPath );
-    const that = this;
+
     // Find all repeat series.
     this.evaluate( repeatPath, 'nodes', null, null, true ).forEach( repeat => {
-        if ( !that.hasPreviousSiblingElementSameName( repeat ) && !that.hasPreviousCommentSiblingWithContent( repeat, comment ) ) {
+        if ( !hasPreviousSiblingElementSameName( repeat ) && !hasPreviousCommentSiblingWithContent( repeat, comment ) ) {
             // Add a comment to the primary instance that serves as an insertion point for each repeat series,
             repeat.before( document.createComment( comment ) );
         }
     } );
 };
 
+/**
+ * @param {string} repeatPath - path to repeat
+ * @param {Element} repeat - Target node
+ * @param {boolean} empty - whether to empty values before adding the template
+ */
 FormModel.prototype.addTemplate = function( repeatPath, repeat, empty ) {
     this.addRepeatComments( repeatPath );
 
@@ -863,10 +827,14 @@ FormModel.prototype.addTemplate = function( repeatPath, repeat, empty ) {
     }
 };
 
+/**
+ * @return {Array<Element>} template nodes list
+ */
 FormModel.prototype.getTemplateNodes = function() {
     const jrPrefix = this.getNamespacePrefix( JAVAROSA_XFORMS_NS );
+
     // For now we support both the official namespaced template and the hacked non-namespaced template attributes
-    // Note: due to an MS Edge bug, we use the slow JS XPath evaluator here. It would be VERY GOOD for performance 
+    // Note: due to an MS Edge bug, we use the slow JS XPath evaluator here. It would be VERY GOOD for performance
     // to switch back once the Edge bug is fixed. The bug results in not finding any templates.
     // https://developer.microsoft.com/en-us/microsoft-edge/platform/issues/9544701/
     return this.evaluate( `/model/instance[1]/*//*[@template] | /model/instance[1]/*//*[@${jrPrefix}:template]`, 'nodes', null, null, false );
@@ -875,7 +843,7 @@ FormModel.prototype.getTemplateNodes = function() {
 /**
  * Obtains a cleaned up string of the data instance
  *
- * @return {string}           XML string
+ * @return {string} XML string
  */
 FormModel.prototype.getStr = function() {
     let dataStr = ( new XMLSerializer() ).serializeToString( this.xml.querySelector( 'instance > *' ) || this.xml.documentElement, 'text/xml' );
@@ -887,12 +855,18 @@ FormModel.prototype.getStr = function() {
     if ( navigator.userAgent.indexOf( 'Trident/' ) === -1 ) {
         dataStr = this.removeDuplicateEnketoNsDeclarations( dataStr );
     }
+
     return dataStr;
 };
 
+/**
+ * @param {string} xmlStr - XML string
+ * @return {string} XML string without duplicates
+ */
 FormModel.prototype.removeDuplicateEnketoNsDeclarations = function( xmlStr ) {
     let i = 0;
     const declarationExp = new RegExp( `( xmlns:${this.getNamespacePrefix( ENKETO_XFORMS_NS )}="${ENKETO_XFORMS_NS}")`, 'g' );
+
     return xmlStr.replace( declarationExp, match => {
         i++;
         if ( i > 1 ) {
@@ -904,7 +878,7 @@ FormModel.prototype.removeDuplicateEnketoNsDeclarations = function( xmlStr ) {
 };
 
 /**
- * There is a huge historic issue (stemming from JavaRosa) that has resulted in the usage of incorrect formulae 
+ * There is a huge historic issue (stemming from JavaRosa) that has resulted in the usage of incorrect formulae
  * on nodes inside repeat nodes.
  * Those formulae use absolute paths when relative paths should have been used. See more here:
  * http://opendatakit.github.io/odk-xform-spec/#a-big-deviation-with-xforms
@@ -919,14 +893,18 @@ FormModel.prototype.removeDuplicateEnketoNsDeclarations = function( xmlStr ) {
  * the second rep_a repeat.
  *
  * This function should be removed when we can reasonbly expect not many 'old XForms' to be in use any more.
- * 
+ *
  * Already it should leave proper XPaths untouched.
  *
- * @param  {string} expr        the XPath expression
- * @param  {string} selector    of the (context) node on which expression is evaluated
- * @param  {number} index       of the instance node with that selector
+ * @param {string} expr - The XPath expression
+ * @param {string} selector - Selector of the (context) node on which expression is evaluated
+ * @param {number} index - Index of the instance node with that selector
  */
 FormModel.prototype.makeBugCompliant = function( expr, selector, index ) {
+    if ( this.noRepeatRefErrorExpected ) {
+        return expr;
+    }
+
     let target = this.node( selector, index ).getElement();
 
     // target is null for nested repeats if no repeats exist
@@ -935,7 +913,6 @@ FormModel.prototype.makeBugCompliant = function( expr, selector, index ) {
     }
 
     const parents = [ target ];
-    const that = this;
 
     while ( target && target.parentElement && target.nodeName.toLowerCase() !== 'instance' ) {
         target = target.parentElement;
@@ -950,7 +927,7 @@ FormModel.prototype.makeBugCompliant = function( expr, selector, index ) {
 
         // if the node is a repeat node that has been cloned at least once (i.e. if it has siblings with the same nodeName)
         if ( siblingsAndSelf.length > 1 ) {
-            const parentSelector = that.getXPath( element, 'instance' );
+            const parentSelector = getXPath( element, 'instance' );
             const parentIndex = siblingsAndSelf.indexOf( element );
             // Add position to segments that do not have an XPath predicate.
             expr = expr.replace( new RegExp( `${parentSelector}/`, 'g' ), `${parentSelector}[${parentIndex + 1}]/` );
@@ -960,11 +937,14 @@ FormModel.prototype.makeBugCompliant = function( expr, selector, index ) {
     return expr;
 };
 
+/**
+ * Set namespaces for all nodes
+ */
 FormModel.prototype.setNamespaces = function() {
     /**
-     * Passing through all nodes would be very slow with an XForms model that contains lots of nodes such as large secondary instances. 
+     * Passing through all nodes would be very slow with an XForms model that contains lots of nodes such as large secondary instances.
      * (The namespace XPath axis is not support in native browser XPath evaluators unfortunately).
-     * 
+     *
      * For now it has therefore been restricted to only look at the top-level node in the primary instance and in the secondary instances.
      * We can always expand that later.
      */
@@ -985,7 +965,8 @@ FormModel.prototype.setNamespaces = function() {
         [
             [ 'orx', OPENROSA_XFORMS_NS, false ],
             [ 'jr', JAVAROSA_XFORMS_NS, false ],
-            [ 'enk', ENKETO_XFORMS_NS, config.repeatOrdinals === true ]
+            [ 'enk', ENKETO_XFORMS_NS, config.repeatOrdinals === true ],
+            [ 'odk', ODK_XFORMS_NS, false ]
         ].forEach( arr => {
             if ( !that.getNamespacePrefix( arr[ 1 ] ) ) {
                 prefix = ( !that.namespaces[ arr[ 0 ] ] ) ? arr[ 0 ] : `__${arr[ 0 ]}`;
@@ -998,16 +979,23 @@ FormModel.prototype.setNamespaces = function() {
             }
         } );
     } );
-
 };
 
+/**
+ * @param {string} namespace - Target namespace
+ * @return {string|undefined} Namespace prefix
+ */
 FormModel.prototype.getNamespacePrefix = function( namespace ) {
     const found = Object.entries( this.namespaces ).find( arr => arr[ 1 ] === namespace );
+
     return found ? found[ 0 ] : undefined;
-
-
 };
 
+/**
+ * Returns a namespace resolver with single `lookupNamespaceURI` method
+ *
+ * @return {{lookupNamespaceURI: Function}} namespace resolver
+ */
 FormModel.prototype.getNsResolver = function() {
     const namespaces = ( typeof this.namespaces === 'undefined' ) ? {} : this.namespaces;
 
@@ -1022,8 +1010,8 @@ FormModel.prototype.getNsResolver = function() {
 /**
  * Shift root to first instance for all absolute paths not starting with /model
  *
- * @param  {string} expr original expression
- * @return {string}      new expression
+ * @param {string} expr - Original expression
+ * @return {string} New expression
  */
 FormModel.prototype.shiftRoot = function( expr ) {
     const LITERALS = /"([^"]*)(")|'([^']*)(')/g;
@@ -1032,6 +1020,7 @@ FormModel.prototype.shiftRoot = function( expr ) {
         expr = expr.replace( LITERALS, ( m, p1, p2, p3, p4 ) => {
             const encoded = typeof p1 !== 'undefined' ? encodeURIComponent( p1 ) : encodeURIComponent( p3 );
             const quote = p2 || p4;
+
             return quote + encoded + quote;
         } );
         // Insert /model/instance[1]
@@ -1041,19 +1030,21 @@ FormModel.prototype.shiftRoot = function( expr ) {
         expr = expr.replace( LITERALS, ( m, p1, p2, p3, p4 ) => {
             const decoded = typeof p1 !== 'undefined' ? decodeURIComponent( p1 ) : decodeURIComponent( p3 );
             const quote = p2 || p4;
+
             return quote + decoded + quote;
         } );
     }
+
     return expr;
 };
 
-/** 
+/**
  * Replace instance('id') with an absolute path
  * Doing this here instead of adding an instance() function to the XPath evaluator, means we can keep using
  * the much faster native evaluator in most cases!
  *
- * @param  {string} expr original expression
- * @return {string}      new expression
+ * @param {string} expr - Original expression
+ * @return {string} New expression
  */
 FormModel.prototype.replaceInstanceFn = function( expr ) {
     let prefix;
@@ -1071,35 +1062,30 @@ FormModel.prototype.replaceInstanceFn = function( expr ) {
     } );
 };
 
-/** 
+/**
  * Replaces current() with /absolute/path/to/node to ensure the context is shifted to the primary instance
- * 
+ *
  * Doing this here instead of adding a current() function to the XPath evaluator, means we can keep using
  * the much faster native evaluator in most cases!
  *
  * Root will be shifted, and repeat positions injected, **later on**, so it's not included here.
  *
- * @param  {string} expr            original expression
- * @param  {string} contextSelector context selector 
- * @return {string}                 new expression
+ * @param {string} expr - Original expression
+ * @param {string} contextSelector - Context selector
+ * @return {string} New expression
  */
 FormModel.prototype.replaceCurrentFn = ( expr, contextSelector ) => {
-    // relative paths
-    if ( contextSelector ) {
-        expr = expr.replace( 'current()/.', `${contextSelector}/.` );
-    }
-    // absolute paths
-    expr = expr.replace( 'current()/', '/' );
-
-    return expr;
+    return expr.replace( /current\(\)/g, `${contextSelector}` );
 };
 
 /**
  * Replaces indexed-repeat(node, path, position, path, position, etc) substrings by converting them
  * to their native XPath equivalents using [position() = x] predicates
  *
- * @param  {string} expr the XPath expression
- * @return {string}      converted XPath expression
+ * @param {string} expr - The XPath expression
+ * @param {string} selector - context path
+ * @param {number} index - index of context node
+ * @return {string} Converted XPath expression
  */
 FormModel.prototype.replaceIndexedRepeatFn = function( expr, selector, index ) {
     const that = this;
@@ -1116,7 +1102,7 @@ FormModel.prototype.replaceIndexedRepeatFn = function( expr, selector, index ) {
 
             for ( i = params.length - 1; i > 1; i -= 2 ) {
                 // The position will become an XPath predicate. The context for an XPath predicate, is not the same
-                // as the context for the complete expression, so we have to evaluate the position separately. Otherwise 
+                // as the context for the complete expression, so we have to evaluate the position separately. Otherwise
                 // relative paths would break.
                 position = !isNaN( params[ i ] ) ? params[ i ] : that.evaluate( params[ i ], 'number', selector, index, true );
                 positionedPath = positionedPath.replace( params[ i - 1 ], `${params[ i - 1 ]}[position() = ${position}]` );
@@ -1132,6 +1118,10 @@ FormModel.prototype.replaceIndexedRepeatFn = function( expr, selector, index ) {
     return expr;
 };
 
+/**
+ * @param {string} expr - The XPath expression
+ * @return {string} Converted XPath expression
+ */
 FormModel.prototype.replaceVersionFn = function( expr ) {
     const that = this;
     let version;
@@ -1146,21 +1136,34 @@ FormModel.prototype.replaceVersionFn = function( expr ) {
     return expr;
 };
 
+/**
+ * @param {string} expr - The XPath expression
+ * @param {string} selector - context path
+ * @param {number} index - index of context node
+ * @return {string} Converted XPath expression
+ */
 FormModel.prototype.replacePullDataFn = function( expr, selector, index ) {
     let pullDataResult;
     const that = this;
     const replacements = this.convertPullDataFn( expr, selector, index );
 
     for ( const pullData in replacements ) {
-        if ( replacements.hasOwnProperty( pullData ) ) {
+        if ( Object.prototype.hasOwnProperty.call( replacements, pullData ) ) {
             // We evaluate this here, so we can use the native evaluator safely. This speeds up pulldata() by about a factor *740*!
             pullDataResult = that.evaluate( replacements[ pullData ], 'string', selector, index, true );
             expr = expr.replace( pullData, `"${pullDataResult}"` );
         }
     }
+
     return expr;
 };
 
+/**
+ * @param {string} expr - The XPath expression
+ * @param {string} selector - context path
+ * @param {number} index - index of context node
+ * @return {string} Converted XPath expression
+ */
 FormModel.prototype.convertPullDataFn = function( expr, selector, index ) {
     const that = this;
     const pullDatas = parseFunctionFromExpression( expr, 'pulldata' );
@@ -1207,13 +1210,13 @@ FormModel.prototype.convertPullDataFn = function( expr, selector, index ) {
  * muliple nodes can be accessed by returned node.snapshotItem(i)(.textContent)
  * a single node can be accessed by returned node(.textContent)
  *
- * @param  { string }     expr        the expression to evaluate
- * @param  { string= }    resTypeStr  boolean, string, number, node, nodes (best to always supply this)
- * @param  { string= }    selector    query selector which will be use to provide the context to the evaluator
- * @param  { number= }    index       0-based index of selector in document
- * @param  { boolean= }   tryNative   whether an attempt to try the Native Evaluator is safe (ie. whether it is
- *                                    certain that there are no date comparisons)
- * @return { ?(number|string|boolean|Array<element>) } the result
+ * @param {string} expr - The expression to evaluate
+ * @param {string} [resTypeStr] - "boolean", "string", "number", "node", "nodes" (best to always supply this)
+ * @param {string} [selector] - Query selector which will be use to provide the context to the evaluator
+ * @param {number} [index] - 0-based index of selector in document
+ * @param {boolean} [tryNative] - Whether an attempt to try the Native Evaluator is safe (ie. whether it is
+ *                                certain that there are no date comparisons)
+ * @return {number|string|boolean|Array<Element>} The result
  */
 FormModel.prototype.evaluate = function( expr, resTypeStr, selector, index, tryNative ) {
     let j, context, doc, resTypeNum, resultTypes, result, collection, response, repeats, cacheKey, original, cacheable;
@@ -1240,13 +1243,13 @@ FormModel.prototype.evaluate = function( expr, resTypeStr, selector, index, tryN
         console.error( 'no context element found', selector, index );
     }
 
-    // cache key includes the number of repeated context nodes, 
+    // cache key includes the number of repeated context nodes,
     // to force a new cache item if the number of repeated changes to > 0
     // TODO: these cache keys can get quite large. Would it be beneficial to get the md5 of the key?
     cacheKey = [ expr, selector, index, repeats ].join( '|' );
 
     // These functions need to come before makeBugCompliant.
-    // An expression transformation with indexed-repeat or pulldata cannot be cached because in 
+    // An expression transformation with indexed-repeat or pulldata cannot be cached because in
     // "indexed-repeat(node, repeat nodeset, index)" the index parameter could be an expression.
     expr = this.replaceIndexedRepeatFn( expr, selector, index );
     expr = this.replacePullDataFn( expr, selector, index );
@@ -1257,7 +1260,7 @@ FormModel.prototype.evaluate = function( expr, resTypeStr, selector, index, tryN
         expr = expr.trim();
         expr = this.replaceInstanceFn( expr );
         expr = this.replaceVersionFn( expr );
-        expr = this.replaceCurrentFn( expr, this.getXPath( context, 'instance', true ) );
+        expr = this.replaceCurrentFn( expr, getXPath( context, 'instance', true ) );
         // shiftRoot should come after replaceCurrentFn
         expr = this.shiftRoot( expr );
         // path corrections for repeated nodes: http://opendatakit.github.io/odk-xform-spec/#a-big-deviation-with-xforms
@@ -1286,7 +1289,7 @@ FormModel.prototype.evaluate = function( expr, resTypeStr, selector, index, tryN
 
     // translate typeStr to number according to DOM level 3 XPath constants
     for ( resTypeNum in resultTypes ) {
-        if ( resultTypes.hasOwnProperty( resTypeNum ) ) {
+        if ( Object.prototype.hasOwnProperty.call( resultTypes, resTypeNum ) ) {
             resTypeNum = Number( resTypeNum );
             if ( resultTypes[ resTypeNum ][ 0 ] === resTypeStr ) {
                 break;
@@ -1302,12 +1305,12 @@ FormModel.prototype.evaluate = function( expr, resTypeStr, selector, index, tryN
             // console.log( 'trying the blazing fast native XPath Evaluator for', expr, index );
             result = doc.evaluate( expr, context, this.getNsResolver(), resTypeNum, null );
         } catch ( e ) {
-            console.log( '%cWell native XPath evaluation did not work... No worries, worth a shot, the expression probably ' +
-                'contained unknown OpenRosa functions or errors:', 'color:orange', expr );
+            //console.log( '%cWell native XPath evaluation did not work... No worries, worth a shot, the expression probably ' +
+            //    'contained unknown OpenRosa functions or errors:', expr );
         }
     }
 
-    // if that didn't work, try the slow XPathJS evaluator 
+    // if that didn't work, try the slow XPathJS evaluator
     if ( !result ) {
         try {
             if ( typeof doc.jsEvaluate === 'undefined' ) {
@@ -1325,7 +1328,7 @@ FormModel.prototype.evaluate = function( expr, resTypeStr, selector, index, tryN
         // for type = any, see if a valid string, number or boolean is returned
         if ( resTypeNum === 0 ) {
             for ( resTypeNum in resultTypes ) {
-                if ( resultTypes.hasOwnProperty( resTypeNum ) ) {
+                if ( Object.prototype.hasOwnProperty.call( resultTypes, resTypeNum ) ) {
                     resTypeNum = Number( resTypeNum );
                     if ( resTypeNum === Number( result.resultType ) && resTypeNum > 0 && resTypeNum < 4 ) {
                         response = result[ resultTypes[ resTypeNum ][ 2 ] ];
@@ -1333,7 +1336,9 @@ FormModel.prototype.evaluate = function( expr, resTypeStr, selector, index, tryN
                     }
                 }
             }
-            console.error( `Expression: ${expr} did not return any boolean, string or number value as expected` );
+            if ( !response ) {
+                console.error( `Expression: ${expr} did not return any boolean, string or number value as expected` );
+            }
         } else if ( resTypeNum === 7 ) {
             // response is an array of Elements
             response = [];
@@ -1343,18 +1348,25 @@ FormModel.prototype.evaluate = function( expr, resTypeStr, selector, index, tryN
         } else {
             response = result[ resultTypes[ resTypeNum ][ 2 ] ];
         }
+
         return response;
     }
 };
 
 /**
+ * @typedef NodesetFilter
+ * @property {boolean} onlyLeaf
+ * @property {boolean} noEmpty
+ */
+
+/**
  * Class dealing with nodes and nodesets of the XML instance
  *
- * @constructor
- * @param {string=} selector simpleXPath or jQuery selectedor
- * @param {number=} index    the index of the target node with that selector
- * @param {?{onlyLeaf: boolean, noEmpty: boolean}=} filter   filter object for the result nodeset
- * @param { FormModel } model instance of FormModel
+ * @class
+ * @param {string} [selector] - SimpleXPath or jQuery selector
+ * @param {number} [index] - The index of the target node with that selector
+ * @param {NodesetFilter} [filter] - Filter object for the result nodeset
+ * @param {FormModel} model - Instance of FormModel
  */
 Nodeset = function( selector, index, filter, model ) {
     const defaultSelector = model.hasInstance ? '/model/instance[1]//*' : '//*';
@@ -1369,10 +1381,16 @@ Nodeset = function( selector, index, filter, model ) {
     this.index = index;
 };
 
+/**
+ * @return {Element} Single node
+ */
 Nodeset.prototype.getElement = function() {
     return this.getElements()[ 0 ];
 };
 
+/**
+ * @return {Array<Element>} List of nodes
+ */
 Nodeset.prototype.getElements = function() {
     let nodes;
     let /** @type {string} */ val;
@@ -1385,6 +1403,7 @@ Nodeset.prototype.getElements = function() {
             this._nodes = this._nodes
                 .filter( node => {
                     val = node.textContent;
+
                     return node.children.length === 0 && val.trim().length > 0;
                 } );
         }
@@ -1407,7 +1426,7 @@ Nodeset.prototype.getElements = function() {
 /**
  * Sets the index of the Nodeset instance
  *
- * @param {=number?} index The 0-based index
+ * @param {number} [index] - The 0-based index
  */
 Nodeset.prototype.setIndex = function( index ) {
     this.index = index;
@@ -1416,11 +1435,11 @@ Nodeset.prototype.setIndex = function( index ) {
 /**
  * Sets data node values.
  *
- * @param {(string|Array.<string>)=} newVals    The new value of the node.
- * @param {?string=} xmlDataType XML data type of the node
+ * @param {(string|Array<string>)} [newVals] - The new value of the node.
+ * @param {string} [xmlDataType] - XML data type of the node
  *
- * @return {?*} wrapping {?boolean}; null is returned when the node is not found or multiple nodes were selected,
- *                            otherwise an object with update information is returned.
+ * @return {null|UpdatedDataNodes} `null` is returned when the node is not found or multiple nodes were selected,
+ *                       otherwise an object with update information is returned.
  */
 Nodeset.prototype.setVal = function( newVals, xmlDataType ) {
     let /**@type {string}*/ newVal;
@@ -1455,18 +1474,24 @@ Nodeset.prototype.setVal = function( newVals, xmlDataType ) {
         if ( xmlDataType === 'binary' ) {
             if ( newVal.length > 0 ) {
                 target.setAttribute( 'type', 'file' );
+                // The src attribute if for default binary values (added by enketo-transformer)
+                // As soon as the value changes this attribute can be removed to clean up.
+                target.removeAttribute( 'src' );
             } else {
                 target.removeAttribute( 'type' );
             }
         }
+
         return updated;
     }
     if ( targets.length > 1 ) {
         console.error( 'nodeset.setVal expected nodeset with one node, but received multiple' );
+
         return null;
     }
     if ( targets.length === 0 ) {
-        console.log( `Data node: ${this.selector} with null-based index: ${this.index} not found. Ignored.` );
+        console.warn( `Data node: ${this.selector} with null-based index: ${this.index} not found. Ignored.` );
+
         return null;
     }
 
@@ -1476,14 +1501,19 @@ Nodeset.prototype.setVal = function( newVals, xmlDataType ) {
 /**
  * Obtains the data value of the first node.
  *
- * @return {string} [description]
+ * @return {string|undefined} data value of first node or `undefined` if zero nodes
  */
 Nodeset.prototype.getVal = function() {
     const nodes = this.getElements();
+
     return nodes.length ? nodes[ 0 ].textContent : undefined;
 };
 
-// If repeats have not been cloned yet, they are not considered a repeat by this function
+/**
+ * Note: If repeats have not been cloned yet, they are not considered a repeat by this function
+ *
+ * @return {{repeatPath: string, repeatIndex: number}|{}} Empty object for nothing found
+ */
 Nodeset.prototype.getClosestRepeat = function() {
     let el = this.getElement();
     let nodeName = el.nodeName;
@@ -1494,7 +1524,7 @@ Nodeset.prototype.getClosestRepeat = function() {
     }
 
     return ( !nodeName || nodeName === 'instance' ) ? {} : {
-        repeatPath: this.model.getXPath( el, 'instance' ),
+        repeatPath: getXPath( el, 'instance' ),
         repeatIndex: this.model.determineIndex( el )
     };
 };
@@ -1507,7 +1537,7 @@ Nodeset.prototype.remove = function() {
 
     if ( dataNode ) {
         const nodeName = dataNode.nodeName;
-        const repeatPath = this.model.getXPath( dataNode, 'instance' );
+        const repeatPath = getXPath( dataNode, 'instance' );
         let repeatIndex = this.model.determineIndex( dataNode );
         const removalEventData = this.model.getRemovalEventData( dataNode );
 
@@ -1550,10 +1580,11 @@ Nodeset.prototype.remove = function() {
 };
 
 /**
- * Convert a value to a specified data type( though always stringified )
- * @param  {?string=} x           value to convert
- * @param  {?string=} xmlDataType XML data type
- * @return {string}               string representation of converted value
+ * Convert a value to a specified data type (though always stringified)
+ *
+ * @param {string} [x] - Value to convert
+ * @param {string} [xmlDataType] - XML data type
+ * @return {string} - String representation of converted value
  */
 Nodeset.prototype.convert = ( x, xmlDataType ) => {
     if ( x.toString() === '' ) {
@@ -1564,9 +1595,16 @@ Nodeset.prototype.convert = ( x, xmlDataType ) => {
         typeof types[ xmlDataType.toLowerCase() ].convert !== 'undefined' ) {
         return types[ xmlDataType.toLowerCase() ].convert( x );
     }
+
     return x;
 };
 
+/**
+ * @param {string} constraintExpr - The XPath expression
+ * @param {string} requiredExpr - The XPath expression
+ * @param {string} xmlDataType - XML data type
+ * @return {Promise} promise that resolves with a ValidateInputResolution object
+ */
 Nodeset.prototype.validate = function( constraintExpr, requiredExpr, xmlDataType ) {
     const that = this;
     const result = {};
@@ -1575,18 +1613,21 @@ Nodeset.prototype.validate = function( constraintExpr, requiredExpr, xmlDataType
     return this.validateRequired( requiredExpr )
         .then( passed => {
             result.requiredValid = passed;
+
             return ( passed === false ) ? null : that.validateConstraintAndType( constraintExpr, xmlDataType );
         } )
         .then( passed => {
             result.constraintValid = passed;
+
             return result;
         } );
 };
 
 /**
  * Validate a value with an XPath Expression and /or xml data type
- * @param  {?string=} expr        XPath expression
- * @param  {?string=} xmlDataType XML datatype
+ *
+ * @param {string} [expr] - The XPath expression
+ * @param {string} [xmlDataType] - XML data type
  * @return {Promise} wrapping a boolean indicating if the value is valid or not; error also indicates invalid field, or problem validating it
  */
 Nodeset.prototype.validateConstraintAndType = function( expr, xmlDataType ) {
@@ -1619,10 +1660,20 @@ Nodeset.prototype.validateConstraintAndType = function( expr, xmlDataType ) {
 };
 
 // TODO: rename to isTrue?
+/**
+ * @param {string} [expr] - The XPath expression
+ * @return {boolean} Whether node is required
+ */
 Nodeset.prototype.isRequired = function( expr ) {
     return !expr || expr.trim() === 'false()' ? false : expr.trim() === 'true()' || this.model.evaluate( expr, 'boolean', this.originalSelector, this.index );
 };
 
+/**
+ * Validates if requiredness is fulfilled.
+ *
+ * @param {string} [expr] - The XPath expression
+ * @return {Promise<boolean>} Promise that resolves with a boolean
+ */
 Nodeset.prototype.validateRequired = function( expr ) {
     const that = this;
 
@@ -1637,13 +1688,21 @@ Nodeset.prototype.validateRequired = function( expr ) {
             !that.isRequired( expr ) );
 };
 
-// Placeholder function meant to be overwritten
+/**
+ * Placeholder function meant to be overwritten
+ */
 FormModel.prototype.getUpdateEventData = () => /*node, type*/ {};
 
-// Placeholder function meant to be overwritten
+/**
+ * Placeholder function meant to be overwritten
+ */
 FormModel.prototype.getRemovalEventData = () => /* node */ {};
 
-// Expose types to facilitate extending with custom types
+/**
+ * Exposed {@link module:types|types} to facilitate extending with custom types
+ *
+ * @type {object}
+ */
 FormModel.prototype.types = types;
 
 export { FormModel };

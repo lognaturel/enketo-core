@@ -1,4 +1,3 @@
-import $ from 'jquery';
 import input from './input';
 import event from './event';
 const range = document.createRange();
@@ -7,32 +6,41 @@ const range = document.createRange();
  * A Widget class that can be extended to provide some of the basic widget functionality out of the box.
  */
 class Widget {
-    /*
-     * @constructor
-     * @param {Element} element The DOM element the widget is applied on
-     * @param {string} name Name of the widget
-     * @param {(boolean|{touch: boolean})} options Options passed to the widget during instantiation
+    /**
+     * @class
+     * @param {Element} element - The DOM element the widget is applied on
+     * @param {(boolean|{touch: boolean})} [options] - Options passed to the widget during instantiation
      */
     constructor( element, options ) {
         this.element = element;
         this.options = options || {};
         this.question = element.closest( '.question' );
         this._props = this._getProps();
+
         // Some widgets (e.g. ImageMap) initialize asynchronously and init returns a promise.
         return this._init() || this;
     }
 
-    // Meant to be overridden, but automatically called.
+    /**
+     * Meant to be overridden, but automatically called.
+     *
+     */
     _init() {
         // load default value into the widget
         this.value = this.originalInputValue;
         // if widget initializes asynchronously return a promise here. Otherwise, return nothing/undefined/null.
     }
 
-    // Not meant to be overridden, but could be. Recommend to extend `get props()` instead.
+    /**
+     * Not meant to be overridden, but could be. Recommend to extend `get props()` instead.
+     *
+     * @return {object} props object
+     */
     _getProps() {
+        const that = this;
+
         return {
-            readonly: this.element.nodeName.toLowerCase === 'select' ? !!this.element.getAttribute( 'readonly' ) : !!this.element.readOnly,
+            get readonly() { return that.element.nodeName.toLowerCase() === 'select' ? that.element.hasAttribute( 'readonly' ) : !!that.element.readOnly; },
             appearances: [ ...this.element.closest( '.question, form.or' ).classList ]
                 .filter( cls => cls.indexOf( 'or-appearance-' ) === 0 )
                 .map( cls => cls.substring( 14 ) ),
@@ -57,7 +65,7 @@ class Widget {
     }
 
     /**
-     * Updates languages, <option>s (cascading selects, and (calculated) values.
+     * Updates form-defined language strings, <option>s (cascading selects, and (calculated) values.
      * Most of the times, this function needs to be overridden in the widget.
      */
     update() {}
@@ -66,7 +74,7 @@ class Widget {
      * Returns widget properties. May need to be extended.
      *
      * @readonly
-     * @memberof Widget
+     * @type {object}
      */
     get props() {
         return this._props;
@@ -76,13 +84,13 @@ class Widget {
      * Returns a HTML document fragment for a reset button.
      *
      * @readonly
-     * @memberof Widget
+     * @type {Element}
      */
     get resetButtonHtml() {
         return range.createContextualFragment(
-            `<button 
-                type="button" 
-                class="btn-icon-only btn-reset" 
+            `<button
+                type="button"
+                class="btn-icon-only btn-reset"
                 aria-label="reset">
                 <i class="icon icon-refresh"> </i>
             </button>`
@@ -93,14 +101,14 @@ class Widget {
      * Returns a HTML document fragment for a download button.
      *
      * @readonly
-     * @memberof Widget
+     * @type {Element}
      */
     get downloadButtonHtml() {
         return range.createContextualFragment(
-            `<a 
-                class="btn-icon-only btn-download" 
-                aria-label="download" 
-                download 
+            `<a
+                class="btn-icon-only btn-download"
+                aria-label="download"
+                download
                 href=""><i class="icon icon-download"> </i></a>`
         );
     }
@@ -109,7 +117,7 @@ class Widget {
      * Obtains the value from the current widget state. Should be overridden.
      *
      * @readonly
-     * @memberof Widget
+     * @type {*}
      */
     get value() {
         return undefined;
@@ -118,7 +126,8 @@ class Widget {
     /**
      * Sets a value in the widget. Should be overridden.
      *
-     * @memberof Widget
+     * @param {*} value - value to set
+     * @type {*}
      */
     set value( value ) {}
 
@@ -127,29 +136,33 @@ class Widget {
      * This form control is often hidden by the widget.
      *
      * @readonly
-     * @memberof Widget
+     * @type {*}
      */
     get originalInputValue() {
-        return input.getVal( $( this.element ) );
+        return input.getVal( this.element );
     }
 
     /**
      * Updates the value in the original form control the widget is instantiated on.
      * This form control is often hidden by the widget.
      *
-     * @memberof Widget
+     * @param {*} value - value to set
+     * @type {*}
      */
     set originalInputValue( value ) {
-        input.setVal( $( this.element ), value, null );
+        // Avoid unnecessary change events as they could have significant negative consequences!
+        // However, to add a check for this.originalInputValue !== value here would affect performance too much,
+        // so we rely on widget code to only use this setter when the value changes.
+        input.setVal( this.element, value, null );
         this.element.dispatchEvent( event.Change() );
     }
 
-    /** 
+    /**
      * Returns its own name.
-     * 
-     * @readonly
+     *
      * @static
-     * @memberof Widget
+     * @readonly
+     * @type {string}
      */
     static get name() {
         return this.constructor.name;
@@ -160,7 +173,7 @@ class Widget {
      *
      * @readonly
      * @static
-     * @memberof Widget
+     * @type {boolean}
      */
     static get list() {
         return false;
@@ -169,6 +182,9 @@ class Widget {
     /**
      * Tests whether widget needs to be instantiated (e.g. if not to be used for touchscreens).
      * Note that the Element (used in the constructor) will be provided as parameter.
+     *
+     * @static
+     * @return {boolean} to instantiate or not to instantiate, that is the question
      */
     static condition() {
         return true;

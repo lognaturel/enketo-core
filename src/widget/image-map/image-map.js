@@ -2,13 +2,18 @@ import Widget from '../../js/widget';
 import { t } from 'enketo/translator';
 import events from '../../js/event';
 import { getSiblingElements } from '../../js/dom-utils';
+const SELECTORS = 'path[id], g[id], circle[id]';
 
 /**
- * Image Map widget that turns an SVG image into a clickable map 
- * by matching radiobutton/checkbox values with id attribute values in the SVG
+ * Image Map widget that turns an SVG image into a clickable map
+ * by matching radiobutton/checkbox values with id attribute values in the SVG.
+ *
+ * @augments Widget
  */
 class ImageMap extends Widget {
-
+    /**
+     * @type {string}
+     */
     static get selector() {
         return '.simple-select.or-appearance-image-map label:first-child > input';
     }
@@ -43,18 +48,28 @@ class ImageMap extends Widget {
         }
     }
 
+    /**
+     * @param {object} widget - the widget element
+     */
     _addFunctionality( widget ) {
-        this.svg = widget.querySelector( 'svg' );
-        this.tooltip = widget.querySelector( '.image-map__ui__tooltip' );
-        if ( this.props.readonly ) {
-            this.disable();
+        if ( widget ) {
+            this.svg = widget.querySelector( 'svg' );
+            this.tooltip = widget.querySelector( '.image-map__ui__tooltip' );
+            if ( this.props.readonly ) {
+                this.disable();
+            }
+            this._setSvgClickHandler();
+            this._setChangeHandler();
+            this._setHoverHandler();
+            this._updateImage();
+            this._setPageHandler();
         }
-        this._setSvgClickHandler();
-        this._setChangeHandler();
-        this._setHoverHandler();
-        this._updateImage();
     }
 
+    /**
+     * @param {Element} img - the image element
+     * @return {Promise} the widget element
+     */
     _addMarkup( img ) {
         const that = this;
         const src = img.getAttribute( 'src' );
@@ -83,22 +98,12 @@ class ImageMap extends Widget {
                     that.question.querySelector( '.option-wrapper' ).before( fragment );
                     const widget = that.question.querySelector( '.image-map' );
                     const svg = widget.querySelector( 'svg' );
-                    // Resize, using original unscaled SVG dimensions
-                    // svg.getBBox() only works after SVG has been added to DOM.
-                    // In FF getBBox causes an "NS_ERROR_FAILURE" exception likely because the SVG
-                    // image has not finished rendering. This doesn't always happen though.
-                    // For now, we just log the FF error, and hope that resizing is done correctly via
-                    // attributes.
-                    let bbox = {};
-                    try {
-                        bbox = svg.getBBox();
-                    } catch ( e ) {
-                        console.error( 'Could not obtain Boundary Box of SVG element', e );
+
+                    // Use any explicitly defined viewPort and else define one using bounding box or attributes
+                    if ( !svg.getAttribute( 'viewBox' ) ) {
+                        this._setViewBox( svg );
                     }
 
-                    const width = bbox.width || svg.getAttribute( 'width' );
-                    const height = bbox.height || svg.getAttribute( 'height' );
-                    svg.setAttribute( 'viewBox', [ 0, 0, parseInt( width, 10 ), parseInt( height, 10 ) ].join( ' ' ) );
                     return widget;
                 } else {
                     throw ( 'Image is not an SVG doc' );
@@ -107,11 +112,37 @@ class ImageMap extends Widget {
             .catch( this._showSvgNotFoundError.bind( that ) );
     }
 
+    _setViewBox( svg ){
+        let viewBox;
+        try {
+            // Resize, using original unscaled SVG dimensions
+            // Note that width and height will be zero if the SVG is currently not visible
+            const bbox = svg.getBBox();
+            viewBox = `${bbox.x} ${bbox.y} ${bbox.width} ${bbox.height}`;
+        } catch ( e ) {
+            // svg.getBBox() only works after SVG has been added to DOM.
+            // In FF getBBox causes an "NS_ERROR_FAILURE" exception likely because the SVG
+            // image has not finished rendering. This doesn't always happen though.
+            // For now, we just log the FF error, and hope that resizing is done correctly via
+            // attributes.
+            console.error( 'Could not obtain Boundary Box of SVG element', e );
+            let width = svg.getAttribute( 'width' );
+            let height = svg.getAttribute( 'height' );
+            if ( width && height ) {
+                viewBox = `0 0 ${parseInt( width, 10 )} ${parseInt( height, 10 )}`;
+            }
+        }
+        svg.setAttribute( 'viewBox', viewBox );
+    }
+
+    /**
+     * @param {Error} err - error message
+     */
     _showSvgNotFoundError( err ) {
         console.error( err );
         const fragment = document.createRange().createContextualFragment(
             `<div class="widget image-map">
-                <div class="image-map__error">${t( 'imagemap.svgNotFound' )}</div>
+                <div class="image-map__error" data-i18n="imagemap.svgNotFound">${t( 'imagemap.svgNotFound' )}</div>
             </div>`
         );
         this.question.querySelector( '.option-wrapper' ).before( fragment );
@@ -119,11 +150,12 @@ class ImageMap extends Widget {
 
     /**
      * Removes id attributes from unmatched path elements in order to prevent hover effect (and click listener).
-     * 
-     * @return {jQuery} [description]
+     *
+     * @param {Element} svg - SVG element
+     * @return {Element} cleaned up SVG
      */
     _removeUnmatchedIds( svg ) {
-        svg.querySelectorAll( 'path[id], g[id]' ).forEach( el => {
+        svg.querySelectorAll( SELECTORS ).forEach( el => {
             if ( !this._getInput( el.id ) ) {
                 el.removeAttribute( 'id' );
             }
@@ -132,13 +164,20 @@ class ImageMap extends Widget {
         return svg;
     }
 
+    /**
+     * @param {string} id - the option ID
+     * @return {Element} input element with matching ID
+     */
     _getInput( id ) {
         return this.question.querySelector( `input[value="${id}"]` );
     }
 
+    /**
+     * Handles SVG click listener
+     */
     _setSvgClickHandler() {
         this.svg.addEventListener( 'click', ev => {
-            if ( !ev.target.closest( 'svg' ).matches( '[or-readonly]' ) && ev.target.matches( 'path[id], g[id]' ) ) {
+            if ( !ev.target.closest( 'svg' ).matches( '[or-readonly]' ) && ( ev.target.matches( SELECTORS ) || ev.target.closest( SELECTORS ) ) ) {
                 const id = ev.target.id || ev.target.closest( 'g[id]' ).id;
                 const input = this._getInput( id );
                 if ( input ) {
@@ -150,26 +189,47 @@ class ImageMap extends Widget {
         } );
     }
 
+    /**
+     * Handles change listener
+     */
     _setChangeHandler() {
         this.question.addEventListener( 'change', this._updateImage.bind( this ) );
     }
 
+    /**
+     * Handles hover listener
+     */
     _setHoverHandler() {
-        this.svg.querySelectorAll( 'path[id], g[id]' ).forEach( el => {
+        this.svg.querySelectorAll( SELECTORS ).forEach( el => {
             el.addEventListener( 'mouseenter', ev => {
                 const id = ev.target.id || ev.target.closest( 'g[id]' ).id;
                 const labels = getSiblingElements( this._getInput( id ), '.option-label.active' );
-                const optionLabel = labels && labels.length ? labels[ 0 ].textContent : '';
+                const optionLabel = labels && labels.length ? labels[0].textContent : '';
                 this.tooltip.textContent = optionLabel;
             } );
             el.addEventListener( 'mouseleave', ev => {
-                if ( ev.target.matches( 'path[id], g[id]' ) ) {
+                if ( ev.target.matches( SELECTORS ) ) {
                     this.tooltip.textContent = '';
                 }
             } );
         } );
     }
 
+    /**
+     * Handles page flip of page in which the widget is placed.
+     */
+    _setPageHandler(){
+        const page = this.element.closest( '[role="page"]' );
+
+        if ( page ){
+            page.addEventListener( events.PageFlip().type, () => this._setViewBox( this.svg ) );
+        }
+    }
+
+    /**
+     * @param {object} data - an object
+     * @return {boolean} whether provided object is an SVG document
+     */
     _isSvgDoc( data ) {
         return typeof data === 'object' && data.querySelector( 'svg' );
     }
@@ -180,7 +240,7 @@ class ImageMap extends Widget {
      */
     _updateImage() {
         let values = this.originalInputValue;
-        this.svg.querySelectorAll( 'path[or-selected], g[or-selected]' ).forEach( el => el.removeAttribute( 'or-selected' ) );
+        this.svg.querySelectorAll( 'path[or-selected], g[or-selected], circle[or-selected]' ).forEach( el => el.removeAttribute( 'or-selected' ) );
 
         if ( typeof values === 'string' ) {
             values = [ values ];
@@ -189,25 +249,35 @@ class ImageMap extends Widget {
         values.forEach( value => {
             if ( value ) {
                 // if multiple values have the same id, change all of them (e.g. a province that is not contiguous)
-                this.svg.querySelectorAll( `path#${value},g#${value}` ).forEach( el => el.setAttribute( 'or-selected', '' ) );
+                this.svg.querySelectorAll( `path#${value},g#${value},circle#${value}` ).forEach( el => el.setAttribute( 'or-selected', '' ) );
             }
         } );
     }
 
+    /**
+     * Disables widget
+     */
     disable() {
         this.svg.setAttribute( 'or-readonly', '' );
     }
 
+    /**
+     * Enables widget
+     */
     enable() {
-        if ( !this.props.readonly ) {
-            this.svg.removeAttribute( 'or-readonly' );
-        }
+        this.svg.removeAttribute( 'or-readonly' );
     }
 
+    /**
+     * Updates widget image
+     */
     update() {
         this._updateImage();
     }
 
+    /**
+     * @type {string}
+     */
     get value() {
         // This widget is unusual. It would better to get the value from the map.
         return this.originalInputValue;

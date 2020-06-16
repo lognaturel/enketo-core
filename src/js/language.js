@@ -1,12 +1,17 @@
 /**
  * Form languages module.
+ *
+ * @module language
  */
 
 import { getSiblingElements } from './dom-utils';
 import events from './event';
 
 export default {
-    init() {
+    /**
+     * @param {string} overrideLang - override language IANA subtag
+     */
+    init( overrideLang ) {
         if ( !this.form ) {
             throw new Error( 'Language module not correctly instantiated with form property.' );
         }
@@ -21,16 +26,23 @@ export default {
             return;
         }
 
-        const languages = [ ...formLanguages.querySelectorAll( 'option' ) ].map( option => option.value );
+        this.languages = [ ...formLanguages.querySelectorAll( 'option' ) ].map( option => option.value );
         if ( langSelector ) {
             langSelector
                 .append( formLanguages );
-            if ( languages.length > 1 ) {
+            if ( this.languages.length > 1 ) {
                 langSelector.classList.remove( 'hide' );
             }
         }
         this.formLanguages = root.querySelector( '#form-languages' );
-        this._currentLang = this.formLanguages.dataset.defaultLang || languages[ 0 ] || '';
+
+        if ( overrideLang && this.languages.includes( overrideLang ) && this.languages.length > 1 ) {
+            this._currentLang = overrideLang;
+            this.setFormUi( this._currentLang );
+        } else {
+            this._currentLang = this.formLanguages.dataset.defaultLang || this.languages[ 0 ] || '';
+        }
+
         const langOption = this.formLanguages.querySelector( `[value="${this._currentLang}"]` );
         const currentDirectionality = langOption && langOption.dataset.dir || 'ltr';
 
@@ -38,26 +50,39 @@ export default {
 
         this.form.view.html.setAttribute( 'dir', currentDirectionality );
 
-        if ( languages.length < 2 ) {
+        if ( this.languages.length < 2 ) {
             return;
         }
 
         this.formLanguages.addEventListener( events.Change().type, event => {
             event.preventDefault();
             this._currentLang = event.target.value;
-            this.setUi( this._currentLang );
+            this.setFormUi( this._currentLang );
         } );
 
-        this.form.view.html.addEventListener( events.AddRepeat().type, event => this.setUi( this._currentLang, event.target ) );
+        this.form.view.html.addEventListener( events.AddRepeat().type, event => this.setFormUi( this._currentLang, event.target ) );
     },
+    /**
+     * @type {string}
+     */
     get currentLang() {
         return this._currentLang;
     },
+    /**
+     * @type {string}
+     */
     get currentLangDesc() {
         const langOption = this.formLanguages.querySelector( `[value="${this._currentLang}"]` );
+
         return langOption ? langOption.textContent : null;
     },
-    setUi( lang, group = this.form.view.html ) {
+    /**
+     * @type {Array}
+     */
+    get languagesUsed() {
+        return this.languages || [];
+    },
+    setFormUi( lang, group = this.form.view.html ) {
         const dir = this.formLanguages.querySelector( `[value="${lang}"]` ).dataset.dir || 'ltr';
         const translations = [ ...group.querySelectorAll( '[lang]' ) ];
 
@@ -77,10 +102,14 @@ export default {
         this.form.view.html.querySelectorAll( 'select, datalist' ).forEach( el => this.setSelect( el ) );
         this.form.view.html.dispatchEvent( events.ChangeLanguage() );
     },
-    // swap language of <select> and <datalist> <option>s
+    /**
+     * swap language of <select> and <datalist> <option>s
+     *
+     * @param {Element} select - select or datalist HTML element
+     */
     setSelect( select ) {
         const type = select.nodeName.toLowerCase();
-        const question = select.closest( '.question' );
+        const question = select.closest( '.question, .or-repeat-info' );
         const translations = question ? question.querySelector( '.or-option-translations' ) : null;
 
         if ( !translations ) {
@@ -90,14 +119,17 @@ export default {
         [ ...select.children ].filter( el => el.matches( 'option' ) && !el.matches( '[value=""], [data-value=""]' ) )
             .forEach( option => {
                 const curLabel = type === 'datalist' ? option.value : option.textContent;
-                const value = type === 'datalist' ? option.dataset.value : option.value;
+                // Datalist will not have initialized when init function is called upon form load, so it is option.value until it has initialized. That is not great.
+                const value = type === 'datalist' ? option.dataset.value || option.value : option.value;
                 const translatedOption = translations.querySelector( `.active[data-option-value="${value}"]` );
-                let newLabel = curLabel;
-                if ( translatedOption && translatedOption.textContent ) {
-                    newLabel = translatedOption.textContent;
+                if ( translatedOption ) {
+                    let newLabel = curLabel;
+                    if ( translatedOption && translatedOption.textContent ) {
+                        newLabel = translatedOption.textContent;
+                    }
+                    option.value = value;
+                    option.textContent = newLabel;
                 }
-                option.value = value;
-                option.textContent = newLabel;
             } );
     }
 };

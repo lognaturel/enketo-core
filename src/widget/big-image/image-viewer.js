@@ -2,9 +2,13 @@ import Widget from '../../js/widget';
 
 /**
  * Viewer for image labels that have set a big-image version.
+ *
+ * @augments Widget
  */
 class ImageViewer extends Widget {
-
+    /**
+     * @type {string}
+     */
     static get selector() {
         return 'a.or-big-image';
     }

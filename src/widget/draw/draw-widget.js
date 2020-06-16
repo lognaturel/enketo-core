@@ -1,7 +1,11 @@
 import Widget from '../../js/widget';
 import $ from 'jquery';
+import events from '../../js/event';
 import support from '../../js/support';
 import fileManager from 'enketo/file-manager';
+/**
+ * @external SignaturePad
+ */
 import SignaturePad from 'signature_pad';
 import { t } from 'enketo/translator';
 import dialog from 'enketo/dialog';
@@ -9,13 +13,18 @@ import { updateDownloadLink, dataUriToBlobSync, getFilename } from '../../js/uti
 const DELAY = 1500;
 
 /**
- * SignaturePad.prototype.fromDataURL is asynchronous and does not return a 
- * Promise. This is a rewrite returning a promise and the objectUrl.
+ * SignaturePad.prototype.fromDataURL is asynchronous and does not return
+ * a Promise. This is a rewrite returning a promise and the objectUrl.
  * In addition it also fixes a bug where a loaded image is stretched to fit
  * the canvas.
- * 
- * @param {*} objectUrl 
- * @param {*} options 
+ *
+ * @function external:SignaturePad#fromObjectURL
+ * @param {*} objectUrl - ObjectURL
+ * @param {object} options - options
+ * @param {number} [options.ratio] - ratio
+ * @param {number} [options.width] - width
+ * @param {number} [options.height] - height
+ * @return {Promise} a promise that resolves with an objectURL
  */
 SignaturePad.prototype.fromObjectURL = function( objectUrl, options ) {
     const image = new Image();
@@ -56,8 +65,9 @@ SignaturePad.prototype.fromObjectURL = function( objectUrl, options ) {
 /**
  * Similar to SignaturePad.prototype.fromData except that it doesn't clear the canvas.
  * This is to facilitate undoing a drawing stroke over a background (bitmap) image.
- * 
- * @param {*} pointGroups 
+ *
+ * @function external:SignaturePad#updateData
+ * @param {*} pointGroups - pointGroups
  */
 SignaturePad.prototype.updateData = function( pointGroups ) {
     const that = this;
@@ -72,8 +82,13 @@ SignaturePad.prototype.updateData = function( pointGroups ) {
 
 /**
  * Widget to obtain user-provided drawings or signature.
+ *
+ * @augments Widget
  */
 class DrawWidget extends Widget {
+    /**
+     * @type {string}
+     */
     static get selector() {
         // note that the selector needs to match both the pre-instantiated form and the post-instantiated form (type attribute changes)
         return '.or-appearance-draw input[data-type-xml="binary"][accept^="image"], .or-appearance-signature input[data-type-xml="binary"][accept^="image"], .or-appearance-annotate input[data-type-xml="binary"][accept^="image"]';
@@ -121,9 +136,11 @@ class DrawWidget extends Widget {
                 that.pad.off();
                 if ( existingFilename ) {
                     that.element.value = existingFilename;
+
                     return that._loadFileIntoPad( existingFilename )
                         .then( that._updateDownloadLink.bind( that ) );
                 }
+
                 return true;
             } );
         this.disable();
@@ -144,7 +161,7 @@ class DrawWidget extends Widget {
                         const data = that.pad.toData();
                         that.pad.clear();
                         const fileInput = that.$widget[ 0 ].querySelector( 'input[type=file]' );
-                        // that.element.dataset.loadedFileName will have been removed only after resetting 
+                        // that.element.dataset.loadedFileName will have been removed only after resetting
                         const fileToLoad = fileInput && fileInput.files[ 0 ] ? fileInput.files[ 0 ] : that.element.dataset.loadedFileName;
                         that._loadFileIntoPad( fileToLoad )
                             .then( () => {
@@ -157,13 +174,15 @@ class DrawWidget extends Widget {
                         that.$widget.addClass( 'full-screen' );
                         that._resizeCanvas( canvas );
                         that.enable();
+
                         return false;
                     } )
                     .end().find( '.hide-canvas-btn' ).on( 'click', () => {
                         that.$widget.removeClass( 'full-screen' );
                         that.pad.off();
-                        that._resizeCanvas( canvas );
                         that._forceUpdate();
+                        that._resizeCanvas( canvas );
+
                         return false;
                     } ).click();
 
@@ -171,7 +190,7 @@ class DrawWidget extends Widget {
                     .on( 'canvasreload', () => {
                         if ( that.cache ) {
                             that.pad.fromObjectURL( that.cache )
-                                .then( that._updateValue.bind( that ) );
+                                .then( that._updateValue.bind( that, false ) );
                         }
                     } );
                 that.enable();
@@ -184,8 +203,8 @@ class DrawWidget extends Widget {
             .on( 'applyfocus', () => {
                 canvas.focus();
             } )
-            .closest( '[role="page"]' ).on( 'pageflip', () => {
-                // When an existing value is loaded into the canvas and is not 
+            .closest( '[role="page"]' ).on( events.PageFlip().type, () => {
+                // When an existing value is loaded into the canvas and is not
                 // the first page, it won't become visible until the canvas is clicked
                 // or the window is resized:
                 // https://github.com/kobotoolbox/enketo-express/issues/895
@@ -196,16 +215,21 @@ class DrawWidget extends Widget {
     }
 
     _forceUpdate() {
-        clearTimeout( this._updateWithDelay );
-        this._updateValue();
+        if ( this._updateWithDelay ) {
+            clearTimeout( this._updateWithDelay );
+            this._updateValue();
+        }
     }
 
     // All this is copied from the file-picker widget
+    /**
+     * @param {string} loadedFileName - the loaded filename
+     */
     _handleFiles( loadedFileName ) {
-        // Monitor maxSize changes to update placeholder text in annotate widget. This facilitates asynchronous 
+        // Monitor maxSize changes to update placeholder text in annotate widget. This facilitates asynchronous
         // obtaining of max size from server without slowing down form loading.
         this._updatePlaceholder();
-        this.$widget.closest( 'form.or' ).on( 'updateMaxSize', this._updatePlaceholder.bind( this ) );
+        this.element.closest( 'form.or' ).addEventListener( events.UpdateMaxSize().type, this._updatePlaceholder.bind( this ) );
 
         const that = this;
 
@@ -222,6 +246,7 @@ class DrawWidget extends Widget {
                 if ( that.props.readonly || event.namespace !== 'propagate' ) {
                     that.$fakeInput.focus();
                     event.stopImmediatePropagation();
+
                     return false;
                 }
             } )
@@ -250,7 +275,7 @@ class DrawWidget extends Widget {
 
         $fakeInput
             .on( 'click', function( event ) {
-                /* 
+                /*
                     The purpose of this handler is to selectively propagate clicks on the fake
                     input to the underlying file input (to show the file picker window).
                     It blocks propagation if the filepicker has a value to avoid accidentally
@@ -260,6 +285,7 @@ class DrawWidget extends Widget {
                 if ( that.props.readonly || $input[ 0 ].value || $fakeInput[ 0 ].value ) {
                     $( this ).focus();
                     event.stopImmediatePropagation();
+
                     return false;
                 }
                 event.preventDefault();
@@ -269,14 +295,23 @@ class DrawWidget extends Widget {
                 false );
     }
 
+    /**
+     * @param {string} fileName - filename to show
+     */
     _showFileName( fileName ) {
         this.$widget.find( '.fake-file-input' ).val( fileName ).prop( 'readonly', !!fileName );
     }
 
+    /**
+     * Updates placeholder
+     */
     _updatePlaceholder() {
         this.$widget.find( '.fake-file-input' ).attr( 'placeholder', t( 'filepicker.placeholder', { maxSize: fileManager.getMaxSizeReadable() || '?MB' } ) );
     }
 
+    /**
+     * @return {DocumentFragment} a document fragment with the widget markup
+     */
     _getMarkup() {
         // HTML syntax copied from filepicker widget
         const load = this.props.load ? `<input type="file" class="ignore draw-widget__load"${this.props.capture !== null ? ` capture="${this.props.capture}"` : ''} accept="${this.props.accept}"/><div class="widget file-picker"><input class="ignore fake-file-input"/><div class="file-feedback"></div></div>` : '';
@@ -310,18 +345,30 @@ class DrawWidget extends Widget {
         return fragment;
     }
 
-    _updateValue() {
+    /**
+     * Updates value
+     *
+     * @param {boolean} [changed] - whether the value has changed
+     */
+    _updateValue( changed = true ) {
         const now = new Date();
         const postfix = `-${now.getHours()}_${now.getMinutes()}_${now.getSeconds()}`;
         this.element.dataset.filenamePostfix = postfix;
         // Note that this.element has become a text input.
-        this.originalInputValue = this.props.filename;
+        // When a default file is loaded this function is called by the canvasreload handler, but the user hasn't changed anything.
+        // We want to make sure the model remains unchanged in that case.
+        if ( changed ) {
+            this.originalInputValue = this.props.filename;
+        }
         // pad.toData() doesn't seem to work when redrawing on a smaller canvas. Doesn't scale.
         // pad.toDataURL() is crude and memory-heavy but the advantage is that it will also work for appearance=annotate
         this.value = this.pad.toDataURL();
         this._updateDownloadLink( this.value );
     }
 
+    /**
+     * Clears pad, cache, loaded file name, download link and others
+     */
     _reset() {
         const that = this;
 
@@ -339,6 +386,7 @@ class DrawWidget extends Widget {
                     // Only upon reset is loadedFileName removed, so that "undo" will work
                     // for drawings loaded from storage.
                     delete that.element.dataset.loadedFileName;
+                    delete that.element.dataset.loadedUrl;
                     that.element.dataset.filenamePostfix = '';
                     $( that.element ).val( '' ).trigger( 'change' );
                     // Annotate file input
@@ -351,18 +399,23 @@ class DrawWidget extends Widget {
     }
 
     /**
-     * 
-     * @param {*} file Either a filename or a file.
+     * @param {string|File} file - Either a filename or a file.
+     * @return {Promise} promise resolving with a string
      */
     _loadFileIntoPad( file ) {
         const that = this;
         if ( !file ) {
             return Promise.resolve( '' );
         }
+        if ( typeof file === 'string' && file.startsWith( 'jr://' ) && this.element.dataset.loadedUrl ) {
+            file = this.element.dataset.loadedUrl;
+        }
+
         return fileManager.getObjectUrl( file )
             .then( that.pad.fromObjectURL.bind( that.pad ) )
             .then( objectUrl => {
                 that.cache = objectUrl;
+
                 return objectUrl;
             } )
             .catch( () => {
@@ -370,6 +423,9 @@ class DrawWidget extends Widget {
             } );
     }
 
+    /**
+     * @param {string} message - the feedback message to show
+     */
     _showFeedback( message ) {
         message = message || '';
 
@@ -377,6 +433,9 @@ class DrawWidget extends Widget {
         this.$widget.find( '.draw-widget__feedback' ).text( message );
     }
 
+    /**
+     * @param {string} url - the download URL
+     */
     _updateDownloadLink( url ) {
         if ( url && url.indexOf( 'data:' ) === 0 ) {
             url = URL.createObjectURL( dataUriToBlobSync( url ) );
@@ -385,16 +444,26 @@ class DrawWidget extends Widget {
         updateDownloadLink( this.$widget.find( '.btn-download' )[ 0 ], url, fileName );
     }
 
+    /**
+     * Forces update and resizes canvas on window resize
+     *
+     * @param {Element} canvas - Canvas element
+     */
     _handleResize( canvas ) {
         const that = this;
         $( window ).on( 'resize', () => {
+            that._forceUpdate();
             that._resizeCanvas( canvas );
         } );
     }
 
-    // Adjust canvas coordinate space taking into account pixel ratio,
-    // to make it look crisp on mobile devices.
-    // This also causes canvas to be cleared.
+    /**
+     * Adjust canvas coordinate space taking into account pixel ratio,
+     * to make it look crisp on mobile devices.
+     * This also causes canvas to be cleared.
+     *
+     * @param {Element} canvas - Canvas element
+     */
     _resizeCanvas( canvas ) {
         // Use a little trick to avoid resizing currently-hidden canvases
         // https://github.com/enketo/enketo-core/issues/605
@@ -410,6 +479,9 @@ class DrawWidget extends Widget {
         }
     }
 
+    /**
+     * Disables widget
+     */
     disable() {
         const that = this;
         const canvas = this.$widget.find( '.draw-widget__body__canvas' )[ 0 ];
@@ -424,6 +496,9 @@ class DrawWidget extends Widget {
             } );
     }
 
+    /**
+     * Enables widget
+     */
     enable() {
         const that = this;
         const canvas = this.$widget.find( '.draw-widget__body__canvas' )[ 0 ];
@@ -440,8 +515,8 @@ class DrawWidget extends Widget {
                         .prop( 'disabled', false );
                 }
                 // https://github.com/enketo/enketo-core/issues/450
-                // When loading a question with a relevant, it is invisible 
-                // until branch.js removes the "pre-init" class. The rendering of the 
+                // When loading a question with a relevant, it is invisible
+                // until branch.js removes the "pre-init" class. The rendering of the
                 // canvas may therefore still be ongoing when this widget is instantiated.
                 // For that reason we call _resizeCanvas when enable is called to make
                 // sure the canvas is rendered properly.
@@ -449,13 +524,10 @@ class DrawWidget extends Widget {
             } );
     }
 
-    /** 
+    /**
      * Updates value when it is programmatically cleared.
      * There is no way to programmatically update a file input other than clearing it, so that's all
      * we need to do.
-     * 
-     * @param  {[type]} element [description]
-     * @return {[type]}         [description]
      */
     update() {
         if ( this.originalInputValue === '' ) {
@@ -463,6 +535,9 @@ class DrawWidget extends Widget {
         }
     }
 
+    /**
+     * @type {object}
+     */
     get props() {
         const props = this._props;
 
@@ -477,6 +552,9 @@ class DrawWidget extends Widget {
         return props;
     }
 
+    /**
+     * @type {string}
+     */
     get value() {
         return this.cache || '';
     }
