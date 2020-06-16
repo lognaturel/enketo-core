@@ -1131,11 +1131,18 @@ Form.prototype.goToTarget = function( target ) {
 };
 
 /**
- * Static method to obtain required enketo-transform version direct from class.
+ * Static property with required enketo-transformer version.
  *
  * @type {string}
  * @default
  */
 Form.requiredTransformerVersion = '1.40.1';
+/**
+ * Static property with supported constraint names (for custom solutions that allow multiple constraints).
+ *
+ * @type {string}
+ * @default
+ */
+Form.constraintNames = [ 'constraint' ];
 
 export { Form, FormModel };
